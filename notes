@@ -1,0 +1,70 @@
+---
+title: "Feature Selection with RFE and Random Forest"
+format: revealjs
+---
+
+# Recursive Feature Elimination with Random Forest
+
+**Recursive Feature Elimination (RFE)** is a feature selection technique that recursively removes the least important features and builds the model iteratively until the optimal number of features is reached.
+
+### Key Points:
+
+- **Step 1:** Train a Random Forest model on the full feature set.
+- **Step 2:** Evaluate the importance of each feature using the Random Forest's feature importance scores.
+- **Step 3:** Eliminate the least important feature(s).
+- **Step 4:** Re-train the model on the reduced feature set.
+- **Step 5:** Repeat steps 2-4 until the desired number of features is reached or performance criteria are met.
+
++++
+
+### Advantages:
+
+- **Robust to Overfitting:** Random Forests reduce the risk of overfitting compared to single decision trees.
+- **Handles Non-linearity:** Capable of capturing complex, non-linear relationships in data.
+
++++
+
+### Applications:
+
+- **Dimensionality Reduction:** Helps in reducing the number of features, leading to simpler and faster models.
+- **Model Interpretability:** Makes it easier to understand which features are most influential.
+
+# Conclusion
+- **RFE with Random Forest** is a powerful technique for feature selection, balancing model performance and simplicity.
+
+
+
+---
+title: "Introduction to Random Forest"
+format: revealjs
+---
+
+# Random Forest
+
+**Random Forest** is an ensemble learning method used for classification, regression, and other tasks. It operates by constructing multiple decision trees during training and outputting the mode of the classes (classification) or the mean prediction (regression) of the individual trees.
+
+### Key Features:
+
+- **Ensemble Method**: Combines multiple decision trees to improve model accuracy.
+- **Bootstrapping**: Uses random samples with replacement to create multiple datasets.
+- **Random Feature Selection**: Randomly selects a subset of features at each split in the tree.
+- **Bagging (Bootstrap Aggregating)**: Aggregates the results from each tree to reduce variance and prevent overfitting.
+
++++
+
+### Advantages:
+
+- **High Accuracy**: Typically more accurate than individual decision trees.
+- **Robustness**: Less prone to overfitting due to averaging multiple trees.
+- **Feature Importance**: Provides a measure of feature importance, aiding in feature selection.
+
++++
+
+### Applications:
+
+- **Classification Tasks**: Widely used in spam detection, image classification, and medical diagnosis.
+- **Regression Tasks**: Used for predicting continuous values such as house prices and stock market trends.
+- **Anomaly Detection**: Effective in identifying outliers in large datasets.
+
+# Conclusion
+- **Random Forest** is a versatile and powerful tool for both classification and regression, offering a balance between accuracy and interpretability.
