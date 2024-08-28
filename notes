@@ -1,3 +1,7 @@
+In the typical implementation of a random forest in Python using scikit-learn, each tree is trained on a different subset of the training data through bootstrap sampling, as mentioned earlier. However, all trees are evaluated on the same test set after they are trained. The test set is separate and is not involved in the training process.
+
+In random forest regression, each decision tree in the forest estimates a mean value for each leaf node, which represents the average of the target values for all data points that fall into that leaf. The final prediction for a given input is obtained by averaging these mean values across all the trees in the forest. T
+
 ---
 title: "Feature Selection with RFE and Random Forest"
 format: revealjs
