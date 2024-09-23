@@ -1,96 +1,155 @@
-The confusionMatrix function from the caret package in R provides a comprehensive set of statistics to evaluate the performance of a classification model. The key statistics it reports include:
-
-Accuracy: The proportion of correctly classified instances (both true positives and true negatives) out of the total instances. It measures the overall correctness of the model.
-
-Kappa Statistic: A measure of agreement between the observed and predicted classifications, adjusted for agreement occurring by chance. It ranges from -1 (complete disagreement) to 1 (perfect agreement), with 0 indicating no better agreement than random chance.
-
-Sensitivity (Recall or True Positive Rate): The proportion of actual positive cases that are correctly identified by the model. It reflects the model’s ability to identify positive instances.
-
-Specificity (True Negative Rate): The proportion of actual negative cases that are correctly identified by the model. It indicates the model's ability to identify negative instances correctly.
-
-Positive Predictive Value (Precision): The proportion of predicted positive cases that are actually positive. It measures the reliability of the positive predictions.
-
-Negative Predictive Value: The proportion of predicted negative cases that are actually negative. It measures the reliability of the negative predictions.
-
-Prevalence: The proportion of actual positives in the dataset. It provides context for understanding the balance of classes.
-
-Detection Rate: The proportion of the total dataset that is correctly identified as positive. It combines sensitivity with prevalence.
-
-Detection Prevalence: The proportion of instances that are predicted as positive, regardless of actual outcome.
-
-Balanced Accuracy: The average of sensitivity and specificity, providing a more balanced measure of accuracy when dealing with imbalanced datasets.
-
-In the typical implementation of a random forest in Python using scikit-learn, each tree is trained on a different subset of the training data through bootstrap sampling, as mentioned earlier. However, all trees are evaluated on the same test set after they are trained. The test set is separate and is not involved in the training process.
-
-In random forest regression, each decision tree in the forest estimates a mean value for each leaf node, which represents the average of the target values for all data points that fall into that leaf. The final prediction for a given input is obtained by averaging these mean values across all the trees in the forest. T
+Here is the revised document with minor copy edits to ensure clarity and consistency:
 
 ---
-title: "Feature Selection with RFE and Random Forest"
-format: revealjs
----
 
-# Recursive Feature Elimination with Random Forest
+# Motivation for a Performance Benchmark Model
 
-**Recursive Feature Elimination (RFE)** is a feature selection technique that recursively removes the least important features and builds the model iteratively until the optimal number of features is reached.
+The performance benchmark model provides a quantitative framework for assessing the future vulnerability and performance of firms. By analyzing key firm-level quantitative metrics, this model makes informed predictions about firms' future performance based on current data. The underlying assumption is that past and current financial indicators contain valuable information that, when systematically analyzed, can forecast future conditions and potential vulnerabilities.
 
-### Key Points:
+The model operates in three key steps:
 
-- **Step 1:** Train a Random Forest model on the full feature set.
-- **Step 2:** Evaluate the importance of each feature using the Random Forest's feature importance scores.
-- **Step 3:** Eliminate the least important feature(s).
-- **Step 4:** Re-train the model on the reduced feature set.
-- **Step 5:** Repeat steps 2-4 until the desired number of features is reached or performance criteria are met.
+1. **Prediction of Future Performance Metrics**: The model uses current-period quantitative data to predict various performance metrics relevant to assessing firm vulnerability. These metrics could include profitability, leverage ratios, and liquidity indicators. By leveraging historical data and relationships, the model forecasts how firms are likely to perform, providing early warnings of potential financial distress.
 
-+++
+2. **Aggregation of Metrics into a Composite Rating**: Once individual future performance metrics are predicted, the model aggregates them into a composite rating for each firm. This simplifies analysis by consolidating multiple performance indicators into a single metric representing the firm's overall performance and vulnerability.
 
-### Advantages:
+3. **Comparison to Existing Ratings**: The composite rating for each firm is then grouped into categories that follow the distribution of pre-existing rating systems, classifying firms into tiers based on their predicted vulnerability. These categories provide a clear, standardized way to assess firms' financial health.
 
-- **Robust to Overfitting:** Random Forests reduce the risk of overfitting compared to single decision trees.
-- **Handles Non-linearity:** Capable of capturing complex, non-linear relationships in data.
-
-+++
-
-### Applications:
-
-- **Dimensionality Reduction:** Helps in reducing the number of features, leading to simpler and faster models.
-- **Model Interpretability:** Makes it easier to understand which features are most influential.
-
-# Conclusion
-- **RFE with Random Forest** is a powerful technique for feature selection, balancing model performance and simplicity.
-
-
+The value of this approach lies in its ability to offer an objective, data-driven assessment of firms' future performance. This model serves as a valuable tool for identifying firms that may need closer supervision or intervention.
 
 ---
-title: "Introduction to Random Forest"
-format: revealjs
+
+# Estimation Sample
+
+The estimation sample consists of firms that meet a specific set of criteria, referred to as Criteria A. The time period used for the estimation spans from the second quarter of 2015 to the first quarter of 2024, chosen due to the availability of complete data for all variables included in the model.
+
 ---
 
-# Random Forest
+# Model Specification
 
-**Random Forest** is an ensemble learning method used for classification, regression, and other tasks. It operates by constructing multiple decision trees during training and outputting the mode of the classes (classification) or the mean prediction (regression) of the individual trees.
+The performance benchmark model captures the relationship between current firm-level quantitative measures and future performance using a regression-based approach. This section outlines the key components of the model.
 
-### Key Features:
+The model is based on **Ordinary Least Squares (OLS) regression**, which estimates the relationship between a set of independent variables (right-hand-side or **rhs variables**) and dependent variables (left-hand-side or **lhs variables**). The dependent variables represent different aspects of firm performance, such as profitability, leverage, or liquidity. These metrics are key indicators of a firm's future financial health and vulnerability.
 
-- **Ensemble Method**: Combines multiple decision trees to improve model accuracy.
-- **Bootstrapping**: Uses random samples with replacement to create multiple datasets.
-- **Random Feature Selection**: Randomly selects a subset of features at each split in the tree.
-- **Bagging (Bootstrap Aggregating)**: Aggregates the results from each tree to reduce variance and prevent overfitting.
+### Key Elements of the Model
 
-+++
+1. **Ordinary Least Squares (OLS) Regression**: OLS is chosen for its simplicity, interpretability, and effectiveness in identifying linear relationships between the independent variables and future firm performance metrics.
 
-### Advantages:
+2. **Quarter-Fixed Effects**: The model incorporates **quarter-fixed effects** to account for time-related factors that affect all firms in a particular quarter, such as macroeconomic conditions or regulatory changes. These fixed effects control for time-dependent shocks, allowing the model to focus on firm-specific factors.
 
-- **High Accuracy**: Typically more accurate than individual decision trees.
-- **Robustness**: Less prone to overfitting due to averaging multiple trees.
-- **Feature Importance**: Provides a measure of feature importance, aiding in feature selection.
+### Dependent Variables (lhs variables)
 
-+++
+The dependent variables represent future performance measures and are predicted based on the independent variables from the current quarter. The table below lists the lhs variables used in the model and their definitions.
 
-### Applications:
+### Independent Variables (rhs variables)
 
-- **Classification Tasks**: Widely used in spam detection, image classification, and medical diagnosis.
-- **Regression Tasks**: Used for predicting continuous values such as house prices and stock market trends.
-- **Anomaly Detection**: Effective in identifying outliers in large datasets.
+The independent variables consist of firm-level quantitative measures available at the current time period. These predictors are used to forecast the performance of firms in the future. The table below lists the rhs variables used in the model and their definitions.
 
-# Conclusion
-- **Random Forest** is a versatile and powerful tool for both classification and regression, offering a balance between accuracy and interpretability.
+---
+
+# Summary Statistics
+
+The summary statistics provide an overview of the key characteristics of the dependent and independent variables used in the model. These statistics include distribution, central tendencies, and variability.
+
+### Descriptive Statistics
+
+Descriptive statistics summarize the mean, median, standard deviation, and range for both the lhs and rhs variables. The table below reports these statistics for the entire sample of firms with complete observations.
+
+### Sample Size by Quarter
+
+The figure below plots the sample size of firms with complete observations in each quarter from the second quarter of 2015 to the first quarter of 2024.
+
+---
+
+# Model Estimation
+
+The estimation process involves fitting regression models for each lhs variable using rhs variables as predictors. The objective is to generate predicted values for each future performance metric based on current data.
+
+### Fitting the Models
+
+Each lhs variable is regressed on the rhs variables using **Ordinary Least Squares (OLS) regression**. **Quarter-fixed effects** are included to control for unobserved factors affecting all firms in a given quarter, such as macroeconomic shocks or regulatory changes.
+
+### Calculating Predicted Values
+
+After estimating the model, the next step is to calculate predicted values for each lhs variable. The **quarter-fixed effects** are not applied directly to the predictions. Instead, the mean of all quarter-fixed effects is calculated and added to the predicted values. This normalization ensures consistency across periods and prevents distortions from specific quarters' fixed effects.
+
+### Regression Results
+
+The regression results for each lhs variable are summarized in a results table. The table includes:
+- **Coefficient estimates**: Indicating the direction and magnitude of the relationship between each rhs variable and the corresponding lhs variable.
+- **Standard errors**: Indicating the uncertainty around each estimate.
+
+It is important to note that the **coefficient estimates for quarter-fixed effects** are not displayed.
+
+[insert table with regression results]
+
+---
+
+# Model Prediction
+
+Once the models are estimated, they are used to generate predictions for each firm’s future performance. These predicted values form the foundation for the rating estimation process.
+
+### Observed vs. Predicted Values
+
+The figure below compares the observed values and the predicted values for each lhs variable. A good model will show predicted values closely tracking the observed outcomes over time.
+
+[insert plot of observed vs. predicted values for each lhs variable]
+
+### Validation of Predicted Values
+
+To validate the model’s accuracy, each observed lhs variable is regressed on its corresponding predicted value. The closer the coefficient of the predicted variable is to 1, and the higher the R-squared, the better the model performs at forecasting future outcomes.
+
+[insert table with validation regression results]
+
+### Out-of-Sample Predictions
+
+After validation, the model generates out-of-sample predictions using the most recent quarter for which rhs data is available. These predictions provide a forward-looking assessment of firms' future performance and form the basis for the rating estimation.
+
+---
+
+# Rating Estimation
+
+The final step is the estimation of performance ratings, which quantify firm vulnerability based on predicted future performance metrics. These ratings are calculated as percentile rankings, then assigned to specific rating categories.
+
+### Rating Percentiles
+
+For each lhs variable, three versions of ratings are calculated based on the predicted values:
+
+#### 1. Cumulative Distribution Rating (CDF Rating)
+
+Each firm’s predicted performance is compared to the historical distribution of the same variable using the **cumulative distribution function (CDF)**. The percentile rank is expressed as **1 - Percentile**, with lower values indicating better performance. This rating is denoted as `lhs1_cdf`, `lhs2_cdf`, etc.
+
+#### 2. T-Distribution Rating
+
+This method assumes the predicted values follow a **t-distribution** based on historical data. As with the CDF rating, the percentile rank is expressed as **1 - Percentile**. This rating is denoted as `lhs1_t`, `lhs2_t`, etc.
+
+#### 3. Rank-Based Rating
+
+All firms are ranked by their predicted values, and the ranks are expressed as percentages of the total number of firms. This ranking-based measure is also reversed, so lower values indicate better performance. This rating is denoted as `lhs1_rank`, `lhs2_rank`, etc.
+
+### Combining Ratings into Composite Scores
+
+Two composite ratings are calculated for each firm: a **historical composite rating** and a **fitted composite rating**.
+
+#### 1. Historical Composite Rating
+
+The historical rating for each lhs variable is the mean of the CDF rating and the rank-based rating. The historical ratings for all lhs variables are then averaged to create a **composite historical rating** for each firm.
+
+#### 2. Fitted Composite Rating
+
+The fitted rating for each lhs variable is the mean of the t-distribution rating and the rank-based rating. The fitted ratings for all lhs variables are then averaged to create a **composite fitted rating** for each firm.
+
+### Rating Categories
+
+Each firm is assigned to a rating category based on the distribution of composite ratings. The categories are as follows:
+- **A**: Top 50% of firms (least vulnerable).
+- **B**: Next 30% (moderate vulnerability).
+- **C**: Next 10% (higher vulnerability).
+- **D**: Bottom 10% (most vulnerable).
+
+The figures below display the estimated composite historical and fitted ratings for each firm based on the most recent data.
+
+[insert plot of composite historical and fitted ratings]
+
+---
+
+The document is now ready for publication, with minor changes made for clarity and precision.
