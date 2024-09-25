@@ -1,0 +1,263 @@
+---
+title: "zinb"
+format: html
+editor: visual
+---
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(MASS)
+library(ggplot2)
+library(pscl)  # For Zero-Inflated Model
+library(broom)
+library(stargazer)
+
+set.seed(123)  # For reproducibility
+
+# Generate company IDs and date range
+company_ids <- 1:100
+months <- seq(as.Date("2018-01-01"), as.Date("2023-12-01"), by = "month")
+
+# Create a data frame with all company and month combinations
+df <- expand.grid(companyid = company_ids, month = months) %>%
+  arrange(companyid, month)
+
+# Create synthetic predictor variables (x1 to x4)
+df <- df %>%
+  mutate(x1 = rnorm(nrow(df), mean = 50, sd = 10),
+         x2 = runif(nrow(df), min = 20, max = 80),
+         x3 = rpois(nrow(df), lambda = 5),
+         x4 = rbinom(nrow(df), size = 1, prob = 0.5))
+
+# Create a linear combination of the x variables to influence the number of incidents
+linear_combination <- 0.5 * df$x1 - 0.3 * df$x2 + 0.1 * df$x3 + 2 * df$x4
+
+# Convert the linear combination to the mean of a negative binomial distribution
+mean_nb <- exp(linear_combination / 100)  # Scale the values
+
+# Simulate the number of incidents using a negative binomial distribution with zero inflation
+theta <- 1  # Dispersion parameter for the negative binomial distribution
+df <- df %>%
+  mutate(incidents = rnbinom(nrow(df), mu = mean_nb, size = theta))
+
+# Introduce zero-inflation (making many zeros)
+zero_inflation_prob <- 0.7  # Probability of zero inflation
+df <- df %>%
+  mutate(incidents = ifelse(runif(nrow(df)) < zero_inflation_prob, 0, incidents))
+
+# Final synthetic dataset
+head(df)
+
+# Save to a CSV file if needed
+write.csv(df, "synthetic_data.csv", row.names = FALSE)
+
+```
+
+
+```{r}
+ggplot(df, aes(x = incidents)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "white") +
+  labs(title = "Distribution of Incidents", x = "Number of Incidents", y = "Frequency")
+```
+
+```{r}
+poisson_model <- glm(incidents ~ x1 + x2 + x3 + x4, family = poisson(), data = df)
+summary(poisson_model)
+```
+
+### 3. **Interpreting Coefficients:**
+   - **Intercept (-1.546)**: This is the log of the expected number of incidents when all predictor variables are 0. The exponentiated value \( \exp(-1.546) \approx 0.213 \) indicates that the baseline number of incidents is approximately 0.213 when `x1`, `x2`, `x3`, and `x4` are zero.
+   
+   - **x1 (0.009826)**: For each unit increase in `x1`, the log of the expected number of incidents increases by 0.0098. Exponentiating this coefficient \( \exp(0.009826) \approx 1.0098 \), we interpret this as a 0.98% increase in the expected number of incidents for each one-unit increase in `x1`. This effect is statistically significant with a p-value \( 1.96 \times 10^{-6} \).
+
+   - **x2 (-0.002557)**: For each unit increase in `x2`, the log of the expected number of incidents decreases by 0.0026. Exponentiating this coefficient \( \exp(-0.002557) \approx 0.9974 \), we interpret this as a 0.26% decrease in the expected number of incidents for each one-unit increase in `x2`. This effect is also statistically significant with a p-value of 0.0312.
+   
+   - **x3 (0.004062)**: The coefficient for `x3` is 0.0041, but its p-value (0.6545) indicates that the effect is not statistically significant. This suggests that `x3` does not have a meaningful impact on the number of incidents in this model.
+   
+   - **x4 (0.102326)**: For each unit increase in `x4`, the log of the expected number of incidents increases by 0.1023. Exponentiating this coefficient \( \exp(0.102326) \approx 1.108 \), we interpret this as an 10.8% increase in the expected number of incidents for each one-unit increase in `x4`. This effect is statistically significant with a p-value of 0.0125.
+
+
+
+### 5. **Goodness of Fit:**
+   - **Null deviance** (9855.1): This measures how well a model with only an intercept (no predictors) fits the data.
+   - **Residual deviance** (9821.2): This is the deviance for the model with the predictors included. A lower deviance indicates a better fit. A smaller difference between null and residual deviance indicates that the predictors do not explain much variation in the data.
+   - **AIC (12641)**: The Akaike Information Criterion (AIC) is a measure of the relative quality of the model. Lower AIC values indicate better-fitting models.
+
+
+# Negative Binomial Model
+```{r}
+negbinom_model <- glm.nb(incidents ~ x1 + x2 + x3 + x4, data = df)
+summary(negbinom_model)
+```
+ - The `init.theta` value (0.1426) represents the dispersion parameter of the negative binomial distribution, which is fitted by the model.
+   - The link function used is the log link (`link = log`), which is typical for count models.
+
+
+### 3. **Interpreting Coefficients:**
+   - **Intercept (-1.542837)**: The log of the expected number of incidents when all predictors (`x1`, `x2`, `x3`, and `x4`) are 0. Exponentiating this value \( \exp(-1.542837) \approx 0.214 \), we interpret that the baseline number of incidents is about 0.214 when all predictors are zero.
+   
+   - **x1 (0.009503)**: For each unit increase in `x1`, the log of the expected number of incidents increases by 0.0095. Exponentiating this coefficient \( \exp(0.009503) \approx 1.0095 \), which means the expected number of incidents increases by approximately 0.95% for each one-unit increase in `x1`. This result is statistically significant, with a p-value of 0.0118.
+   
+   - **x2 (-0.002372)**: For each unit increase in `x2`, the log of the expected number of incidents decreases by 0.0024. Exponentiating this coefficient \( \exp(-0.002372) \approx 0.9976 \), indicating a 0.24% decrease in the expected number of incidents for each one-unit increase in `x2`. However, the p-value of 0.2730 indicates that this result is not statistically significant.
+   
+   - **x3 (0.004599)**: The coefficient for `x3` is small and has a p-value of 0.7817, suggesting that `x3` does not have a statistically significant relationship with the number of incidents.
+   
+   - **x4 (0.104090)**: For each one-unit increase in `x4`, the log of the expected number of incidents increases by 0.1041. Exponentiating this coefficient \( \exp(0.104090) \approx 1.1096 \), indicating a 10.96% increase in the expected number of incidents for each one-unit increase in `x4`. However, the p-value of 0.1639 suggests that this effect is not statistically significant.
+   
+
+### 5. **Dispersion Parameter (Theta):**
+   - **Theta (0.1426)**: The dispersion parameter for the negative binomial model. A low theta value indicates significant overdispersion in the data. Overdispersion means that the variance of the incidents is larger than what would be expected under a Poisson distribution.
+   - **Std. Err. (0.00699)**: This is the standard error of the theta estimate, showing how precisely theta is estimated.
+   
+   The negative binomial model is more appropriate than the Poisson model when the data are overdispersed, which is indicated here by a small theta value.
+
+### 6. **Goodness of Fit:**
+   - **Null deviance (3037.6)**: This measures how well a model with only the intercept (no predictors) fits the data.
+   - **Residual deviance (3027.7)**: This measures how well the model with the predictors fits the data. A smaller value indicates a better fit.
+   - **AIC (9566.9)**: The Akaike Information Criterion (AIC) is a measure of model fit. A lower AIC indicates a better fit. The negative binomial model has a much lower AIC (9566.9) compared to the Poisson model's AIC (12641), suggesting that the negative binomial model is a better fit for the data.
+
+### 7. **2 x Log-Likelihood:**
+   - **2 x log-likelihood (-9554.916)**: This value is used to compare nested models. The higher the log-likelihood, the better the model fits the data. Since the negative binomial model accounts for overdispersion, it has a better log-likelihood than the Poisson model.
+
+
+
+
+```{r}
+
+# Zero-Inflated Negative Binomial Model
+zinb_model <- zeroinfl(incidents ~ x1 + x2 + x3 + x4 | x1 + x2 + x3 + x4, data = df, dist = "negbin")
+summary(zinb_model)
+```
+The output is from a **Zero-Inflated Negative Binomial (ZINB)** model, which has two components: a **count model** (negative binomial) and a **zero-inflation model** (binomial). The ZINB model is appropriate when there is overdispersion in the count data and an excess of zero counts.
+
+
+### 2. **Pearson Residuals:**
+   - These residuals measure the difference between the observed and fitted values.
+   - A median close to zero suggests a reasonably good fit, but extreme values (like the maximum residual of 10.846) may indicate some data points where the model does not fit well.
+
+---
+
+### 3. **Count Model Coefficients (Negative Binomial with Log Link):**
+   This component models the count of incidents for non-zero cases.
+
+   - **Intercept (-0.165185)**: The log of the expected count of incidents when all predictors are zero. Not statistically significant (p-value = 0.53787).
+   
+   - **x1 (0.011240)**: For each unit increase in `x1`, the log of the expected number of incidents increases by 0.0112. Exponentiating this coefficient \( \exp(0.011240) \approx 1.011 \), which means the expected count of incidents increases by about 1.1% for each one-unit increase in `x1`. This effect is statistically significant (p-value = 0.00359).
+   
+   - **x2 (-0.002702)**: For each unit increase in `x2`, the log of the expected number of incidents decreases by 0.0027. This effect is not statistically significant (p-value = 0.24377).
+   
+   - **x3 (-0.014173)**: The log of expected incidents decreases by 0.0142 for each unit increase in `x3`. This effect is not statistically significant (p-value = 0.41996).
+   
+   - **x4 (0.022458)**: The log of expected incidents increases by 0.0225 for each unit increase in `x4`, but this effect is not statistically significant (p-value = 0.77250).
+   
+   - **Log(theta) (0.271532)**: This represents the dispersion parameter in log form. A larger theta value indicates more overdispersion. Since the p-value (0.19748) is not significant, the dispersion parameter is not statistically different from zero.
+
+---
+
+### 4. **Zero-Inflation Model Coefficients (Binomial with Logit Link):**
+   This part models the probability that an observation is an "excess" zero (i.e., where zero incidents are more likely than expected from the count model alone).
+
+   - **Intercept (1.0784276)**: The log-odds of being in the "excess zero" group when all predictors are zero. Exponentiating this gives \( \exp(1.0784276) \approx 2.94 \), meaning the odds of excess zeros are about 2.94 times higher when all predictors are zero. This effect is statistically significant (p-value = 0.000422).
+   
+   - **x1 (0.0025993)**: For each unit increase in `x1`, the log-odds of being in the excess zero group increases by 0.0026. This effect is not statistically significant (p-value = 0.563001).
+   
+   - **x2 (-0.0005657)**: For each unit increase in `x2`, the log-odds of being in the excess zero group decreases slightly by 0.00057. This effect is not statistically significant (p-value = 0.829784).
+   
+   - **x3 (-0.0249431)**: For each unit increase in `x3`, the log-odds of being in the excess zero group decreases by 0.0249. This effect is not statistically significant (p-value = 0.216091).
+   
+   - **x4 (-0.1127992)**: For each unit increase in `x4`, the log-odds of being in the excess zero group decreases by 0.1128. This effect is not statistically significant (p-value = 0.208423).
+
+---
+
+### 5. **Theta:**
+   - **Theta (1.312)**: This is the dispersion parameter for the negative binomial distribution. A theta value greater than 1 indicates overdispersion (i.e., variance greater than the mean) in the count data.
+   - The model estimated theta based on the overdispersion in the data.
+
+---
+
+### 6. **Log-Likelihood:**
+   - **Log-likelihood (-4752)**: This value measures the goodness of fit of the model. Higher values (closer to zero) indicate a better fit. The log-likelihood is used for model comparison, such as calculating AIC.
+
+---
+
+### 7. **Interpretation of the Model:**
+   - **Count Model:** 
+     - `x1` is significant, suggesting that it has a meaningful relationship with the number of incidents. Specifically, an increase in `x1` leads to a higher expected count of incidents.
+     - `x2`, `x3`, and `x4` do not significantly influence the number of incidents in the count model.
+   
+   - **Zero-Inflation Model:** 
+     - The intercept is significant, suggesting that there is a baseline tendency for excess zeros in the data, even without the predictors.
+     - None of the predictors (`x1`, `x2`, `x3`, `x4`) have significant effects on whether an observation is in the excess zero group.
+
+
+```{r}
+AIC(poisson_model, negbinom_model, zinb_model)
+
+```
+
+AIC Interpretation:
+AIC is a measure of the trade-off between model fit and complexity. Lower AIC values indicate a better model, as they represent a model that fits the data well while using fewer parameters.
+The formula for AIC penalizes models with more parameters to avoid overfitting.
+AIC Comparison:
+Poisson Model (AIC = 12640.634, df = 5):
+
+This model has the highest AIC, indicating it fits the data the least well compared to the other models.
+The Poisson model assumes that the variance is equal to the mean, which likely does not hold true in this dataset (as indicated by overdispersion).
+Negative Binomial Model (AIC = 9566.916, df = 6):
+
+The AIC for the negative binomial model is much lower than for the Poisson model, suggesting that the negative binomial model fits the data better. This makes sense, as the negative binomial model accounts for overdispersion (variance greater than the mean).
+Zero-Inflated Negative Binomial (ZINB) Model (AIC = 9526.005, df = 11):
+
+The ZINB model has the lowest AIC value of the three, indicating that it fits the data the best. This suggests that accounting for both overdispersion (as in the negative binomial model) and the excess of zero counts improves the model further.
+
+```{r}
+
+# 3. Logistic Regression Model
+df <- df %>%
+  mutate(incidents_binary = ifelse(incidents > 0, 1, 0))
+
+logistic_model <- glm(incidents_binary ~ x1 + x2 + x3 + x4, family = binomial(), data = df)
+summary(logistic_model)
+```
+
+### 3. **Interpreting the Coefficients:**
+   - **Intercept (-1.9576289)**: This represents the log-odds of having at least one incident when all predictors (`x1`, `x2`, `x3`, and `x4`) are 0. Exponentiating this value \( \exp(-1.9576289) \approx 0.141 \), which suggests that when all predictors are zero, the odds of having at least one incident are about 0.141 (or a probability of \( \frac{0.141}{1+0.141} \approx 0.123 \)).
+   
+   - **x1 (0.0037766)**: A one-unit increase in `x1` leads to an increase of 0.0038 in the log-odds of having at least one incident. Exponentiating this \( \exp(0.0037766) \approx 1.0038 \), which implies a 0.38% increase in the odds of having an incident for each one-unit increase in `x1`. This is not statistically significant (p-value = 0.2499).
+   
+   - **x2 (-0.0009352)**: A one-unit increase in `x2` results in a decrease of 0.0009 in the log-odds of having at least one incident. Exponentiating this \( \exp(-0.0009352) \approx 0.9991 \), indicating a very small (0.09%) decrease in the odds of an incident for each unit increase in `x2`. This is not statistically significant (p-value = 0.6195).
+   
+   - **x3 (0.0135946)**: A one-unit increase in `x3` leads to a 0.0136 increase in the log-odds of having at least one incident. Exponentiating this \( \exp(0.0135946) \approx 1.0137 \), implying a 1.37% increase in the odds of having an incident for each unit increase in `x3`. This effect is not statistically significant (p-value = 0.3449).
+   
+   - **x4 (0.1097650)**: A one-unit increase in `x4` results in a 0.1098 increase in the log-odds of having at least one incident. Exponentiating this \( \exp(0.1097650) \approx 1.116 \), meaning the odds of having an incident increase by approximately 11.6% for each unit increase in `x4`. This effect is marginally significant, with a p-value of 0.0917, indicating it’s close to statistical significance at the 10% level.
+
+### 4. **Statistical Significance:**
+   - **x4** is marginally significant, with a p-value of 0.0917, suggesting that it has a borderline relationship with the likelihood of having at least one incident.
+   - **x1**, **x2**, and **x3** are not statistically significant, as their p-values are greater than 0.05, indicating that there is no strong evidence that these predictors influence the likelihood of having at least one incident.
+
+### 5. **Goodness of Fit:**
+   - **Null deviance (6224.1)**: This measures the fit of a model with only the intercept (no predictors). It represents the baseline fit of the model.
+   - **Residual deviance (6218.6)**: This measures the fit of the model with the predictors. A decrease in deviance indicates a better fit. The small difference between the null and residual deviance suggests that the predictors don't explain much additional variance in the outcome.
+   - **AIC (6228.6)**: The Akaike Information Criterion is used to assess the model fit while penalizing model complexity. Lower AIC values indicate a better fit, but given the residual deviance, this model might not have much explanatory power.
+
+
+```{r}
+stargazer(poisson_model, negbinom_model, zinb_model, logistic_model,
+          type = "text",
+          title = "Regression Results",
+          dep.var.labels = c("Number of Incidents", "Incident (Binary)"),
+          column.labels = c("Poisson", "Neg Binomial", "ZINB", "Logistic"),
+          covariate.labels = c("x1", "x2", "x3", "x4"),
+          omit.stat = c("LL", "ser", "f"),
+          no.space = TRUE,
+          align = TRUE)
+
+```
+
+Based on the model comparisons and the characteristics of the dataset, the **Zero-Inflated Negative Binomial (ZINB)** model appears to be the best representation of the data. This conclusion is supported by the AIC (Akaike Information Criterion) values from the four models. The ZINB model has the lowest AIC (9526.005), which indicates that it provides the best fit while balancing model complexity and explanatory power. The ZINB model is particularly well-suited for this dataset because it accounts for two key features: overdispersion (the variance is greater than the mean) and an excess of zero counts (many observations with zero incidents).
+
+The **Negative Binomial** model, with an AIC of 9566.916, also provides a better fit than the **Poisson** model (AIC = 12640.634), confirming the presence of overdispersion in the data. However, it does not handle the zero-inflation as effectively as the ZINB model. The **Poisson** model performs the worst, as it assumes equal mean and variance, which is clearly violated in the data given the overdispersion. Finally, the **logistic regression**, while useful for understanding the binary outcome of whether an incident occurs, does not capture the full distribution of the data, which includes both zero and count outcomes.
+
+In summary, the ZINB model is the most appropriate because it effectively captures both the count nature of the data and the excess zeros, providing a more nuanced understanding of the data compared to the other models.

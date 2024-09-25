@@ -1,145 +1,146 @@
 rm(list=ls())
+
 library(data.table)
-source("functions.R")
 library(RSQLite)
-library(DBI)  
+library(DBI)
 library(dplyr)
+library(stringr)
 
-db_path <- "D:/OneDrive/research-data/HMDA/db/hmda.db"
-con <- dbConnect(RSQLite::SQLite(), db_path)
-
-cols_to_drop <- c(paste0("applicant_ethnicity_",2:5),
-                  paste0("co_applicant_ethnicity_",2:5),
-                  paste0("applicant_race_",2:5),
-                  paste0("co_applicant_race_",2:5),
-                  paste0("aus_",2:5),
-                  paste0("denial_reason_",2:5),
+cols_to_drop <- c(paste0("applicant_ethnicity_", 2:5),
+                  paste0("co_applicant_ethnicity_", 2:5),
+                  paste0("applicant_race_", 2:5),
+                  paste0("co_applicant_race_", 2:5),
+                  paste0("applicantrace", 2:5),
+                  paste0("coapplicantrace", 2:5),
+                  paste0("aus_", 2:5),
+                  paste0("denial_reason_", 2:5),
+                  paste0("denialreason", 2:5),
                   "manufactured_home_secured_property_type",
                   "manufactured_home_land_property_interest")
 
+# yrs <- 2012:2013
+# file_names <- paste0(yrs, "_lar.dat")
+
+# yrs <- 2017
+# file_names <- paste0(yrs, "_lar.txt")
+
+# yrs <- 2014:2016
+# file_names <- paste0(yrs, "_lar.csv")
+
+yrs <- 2020:2021
+file_names <- paste0(yrs, "_lar.txt")
+
+for(fn in file_names) {
+  print(fn)
+
+  if(identical(yrs, 2012:2013)) {
+    # temp <- fread(paste0('/raw_data_to_delete/',fn), sep="|", header = F)
+    # 
+    # split_positions <- c(4, 14, 15, 16, 17, 18, 23, 24, 29, 31, 34, 39, 40, 42, 43, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 6 ...)
+    # 
+    # 
+    # col_names <- c("asofyear", "respondentid", "agencycode", "typeofloan", "purposeofloan",
+    #                "occupancy", "amountofloan", "actiontaken", "msa", "state", "countycode",
+    #                "censustract", "applicantsex", "applicantincome",
+    #                "typeofpurchaser", "denialreason1", "denialreason2", "denialreason3",
+    #                "editstatus", "propertytype", "preapprovals", "applicantethnicity",
+    #                "coapplicantethnicity", "applicantrace1", "applicantrace2", "applicantrace3",
+    #                "applicantrace4", "applicantrace5", "coapplicantrace1", "coapplicantrace2",
+    #                "coapplicantrace3", "coapplicantrace4", "coapplicantrace5", "ratespread",
+    #                "hoepastatus", "lienstatus", "seqno")
+    # 
+    # cols_to_numeric <- col_names[!col_names %in% c("state", "countycode", "censustract", "respondentid")]
+    # 
+    # for (i in 1:length(split_positions)) {
+    #   start_pos <- ifelse(i == 1, 1, split_positions[i - 1] + 1)
+    #   end_pos <- split_positions[i]
+    #   new_col_name <- col_names[i]
+    #   temp[, (new_col_name) := substr(V1, start_pos, end_pos)]
+    # }
+    # 
+    # temp[, V1 := NULL]
+    # for (coln in cols_to_numeric) {
+    #   if (!is.numeric(temp[[coln]])) {
+    #     temp[, (coln) := as.numeric(temp[[coln]])]
+    #   }
+    # }
+    # 
+    # temp[, censustract := trimws(censustract)]
+    # temp[, censustract := gsub("[.]", "", censustract)]
+    # temp[, censustract := str_pad(censustract, 6, "left", "0")]
+
+  } else {
+    temp <- fread(paste0('C:/Users/dimut/Downloads/',fn),select = c("activity_year","loan_purpose","census_tract","occupancy_type","action_taken"))
+  }
+
+  gc()
+
+  if(identical(yrs, 2014:2016)) {
+    names(temp) <- c("asofyear", "respondentid", "agencycode", "typeofloan", "propertytype", "purposeofloan",
+                     "occupancy", "amountofloan", "preapprovals", "actiontaken", "msa", "state", "countycode",
+                     "censustract", "applicantsex", "applicantethnicity", "coapplicantethnicity",
+                     "applicantrace1", "applicantrace2", "applicantrace3", "applicantrace4", "applicantrace5",
+                     "coapplicantrace1", "coapplicantrace2", "coapplicantrace3", "coapplicantrace4",
+                     "coapplicantrace5", "applicantincome", "denialreason1", "denialreason2", "denialreason3",
+                     "editstatus", "hoepastatus", "lienstatus", "seqno", "ratespread",
+                     "ct_population", "ct_minoritypct", "ct_median_income", "ct_tract_to_msa_income",
+                     "ct_no_occupied_unites", "ct_no_of_1to4_family_unit", "application_date_indicator")
+  }
+
+  if(identical(yrs, 2017)) {
+    names(temp) <- c("recordid", "respondentid", "agencycode", "typeofloan", "propertytype", "purposeofloan",
+                     "occupancy", "amountofloan", "preapprovals", "actiontaken", "msa", "state", "countycode",
+                     "censustract", "applicantethnicity", "coapplicantethnicity",
+                     "applicantrace1", "applicantrace2", "applicantrace3", "applicantrace4", "applicantrace5",
+                     "coapplicantrace1", "coapplicantrace2", "coapplicantrace3", "coapplicantrace4",
+                     "coapplicantrace5", "applicantsex", "applicantincome", "denialreason1", "denialreason2",
+                     "denialreason3", "ratespread", "hoepastatus", "lienstatus", "seqno",
+                     "ct_population", "ct_minoritypct", "ct_median_income", "ct_tract_to_msa_income",
+                     "ct_no_occupied_unites", "ct_no_of_1to4_family_unit", "application_date_indicator")
+    temp[, asofyear := 2017]
+  }
+  
+  if(identical(yrs, 2020:2021)) {
+  }
+
+  temp <- temp[, (cols_to_drop) := NULL, with = FALSE]
+
+  db_path <- paste0("D:/OneDrive/research-data/HMDA/db/depositor_chars_", sub("\\..*$", "", fn), ".db")
+  con <- dbConnect(RSQLite::SQLite(), db_path)
+  dbWriteTable(con, paste0("tb_",sub("\\..*$", "", fn)), temp,overwrite=T)
+  dbDisconnect(con)
+}
 
 
-fn = "2018_lar.txt"
-temp <- fread(paste0('C:/Users/dimut/Downloads/','2018_lar.txt'))
-gc()
-temp <- temp[, (cols_to_drop) := NULL, with = FALSE]
 
-
-dbWriteTable(con,sub("\\..*$", "", fn),hmda,append=T)
-
-
-#####################
-
-# 
 # rm(list=ls())
-# 
 # library(data.table)
+# source("functions.R")
 # library(RSQLite)
-# library(DBI)
+# library(DBI)  
 # library(dplyr)
-# library(stringr)
 # 
-# cols_to_drop <- c(paste0("applicant_ethnicity_", 2:5),
-#                   paste0("co_applicant_ethnicity_", 2:5),
-#                   paste0("applicant_race_", 2:5),
-#                   paste0("co_applicant_race_", 2:5),
-#                   paste0("applicantrace", 2:5),
-#                   paste0("coapplicantrace", 2:5),
-#                   paste0("aus_", 2:5),
-#                   paste0("denial_reason_", 2:5),
-#                   paste0("denialreason", 2:5),
+# db_path <- "D:/OneDrive/research-data/HMDA/db/hmda.db"
+# con <- dbConnect(RSQLite::SQLite(), db_path)
+# 
+# cols_to_drop <- c(paste0("applicant_ethnicity_",2:5),
+#                   paste0("co_applicant_ethnicity_",2:5),
+#                   paste0("applicant_race_",2:5),
+#                   paste0("co_applicant_race_",2:5),
+#                   paste0("aus_",2:5),
+#                   paste0("denial_reason_",2:5),
 #                   "manufactured_home_secured_property_type",
 #                   "manufactured_home_land_property_interest")
 # 
-# yrs <- 2012:2013
-# file_names <- paste0(yrs, "_lar.dat")
 # 
-# # yrs <- 2017
-# # file_names <- paste0(yrs, "_lar.txt")
 # 
-# # yrs <- 2014:2016
-# # file_names <- paste0(yrs, "_lar.csv")
+# fn = "2018_lar.txt"
+# temp <- fread(paste0('C:/Users/dimut/Downloads/','2018_lar.txt'))
+# gc()
+# temp <- temp[, (cols_to_drop) := NULL, with = FALSE]
 # 
-# # yrs <- 2018:2023
-# # file_names <- paste0(2018:2023, "_lar.txt")
 # 
-# for(fn in file_names) {
-#   print(fn)
-#   
-#   if(identical(yrs, 2012:2013)) {
-#     temp <- fread(paste0('/raw_data_to_delete/',fn), sep="|", header = F)
-#     
-#     split_positions <- c(4, 14, 15, 16, 17, 18, 23, 24, 29, 31, 34, 39, 40, 42, 43, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 6 ...)
-#     
-#     
-#     col_names <- c("asofyear", "respondentid", "agencycode", "typeofloan", "purposeofloan",
-#                    "occupancy", "amountofloan", "actiontaken", "msa", "state", "countycode", 
-#                    "censustract", "applicantsex", "applicantincome",
-#                    "typeofpurchaser", "denialreason1", "denialreason2", "denialreason3",
-#                    "editstatus", "propertytype", "preapprovals", "applicantethnicity",
-#                    "coapplicantethnicity", "applicantrace1", "applicantrace2", "applicantrace3",
-#                    "applicantrace4", "applicantrace5", "coapplicantrace1", "coapplicantrace2",
-#                    "coapplicantrace3", "coapplicantrace4", "coapplicantrace5", "ratespread",
-#                    "hoepastatus", "lienstatus", "seqno")
-#     
-#     cols_to_numeric <- col_names[!col_names %in% c("state", "countycode", "censustract", "respondentid")]
-#     
-#     for (i in 1:length(split_positions)) {
-#       start_pos <- ifelse(i == 1, 1, split_positions[i - 1] + 1)
-#       end_pos <- split_positions[i]
-#       new_col_name <- col_names[i]
-#       temp[, (new_col_name) := substr(V1, start_pos, end_pos)]
-#     }
-#     
-#     temp[, V1 := NULL]
-#     for (coln in cols_to_numeric) {
-#       if (!is.numeric(temp[[coln]])) {
-#         temp[, (coln) := as.numeric(temp[[coln]])]
-#       }
-#     }
-#     
-#     temp[, censustract := trimws(censustract)]
-#     temp[, censustract := gsub("[.]", "", censustract)]
-#     temp[, censustract := str_pad(censustract, 6, "left", "0")]
-#     
-#   } else {
-#     temp <- fread(paste0('/raw_data_to_delete/',fn))
-#   }
-#   
-#   gc()
-#   
-#   if(identical(yrs, 2014:2016)) {
-#     names(temp) <- c("asofyear", "respondentid", "agencycode", "typeofloan", "propertytype", "purposeofloan",
-#                      "occupancy", "amountofloan", "preapprovals", "actiontaken", "msa", "state", "countycode",
-#                      "censustract", "applicantsex", "applicantethnicity", "coapplicantethnicity", 
-#                      "applicantrace1", "applicantrace2", "applicantrace3", "applicantrace4", "applicantrace5",
-#                      "coapplicantrace1", "coapplicantrace2", "coapplicantrace3", "coapplicantrace4",
-#                      "coapplicantrace5", "applicantincome", "denialreason1", "denialreason2", "denialreason3",
-#                      "editstatus", "hoepastatus", "lienstatus", "seqno", "ratespread",
-#                      "ct_population", "ct_minoritypct", "ct_median_income", "ct_tract_to_msa_income", 
-#                      "ct_no_occupied_unites", "ct_no_of_1to4_family_unit", "application_date_indicator")
-#   }
-#   
-#   if(identical(yrs, 2017)) {
-#     names(temp) <- c("recordid", "respondentid", "agencycode", "typeofloan", "propertytype", "purposeofloan",
-#                      "occupancy", "amountofloan", "preapprovals", "actiontaken", "msa", "state", "countycode",
-#                      "censustract", "applicantethnicity", "coapplicantethnicity", 
-#                      "applicantrace1", "applicantrace2", "applicantrace3", "applicantrace4", "applicantrace5",
-#                      "coapplicantrace1", "coapplicantrace2", "coapplicantrace3", "coapplicantrace4",
-#                      "coapplicantrace5", "applicantsex", "applicantincome", "denialreason1", "denialreason2",
-#                      "denialreason3", "ratespread", "hoepastatus", "lienstatus", "seqno", 
-#                      "ct_population", "ct_minoritypct", "ct_median_income", "ct_tract_to_msa_income",
-#                      "ct_no_occupied_unites", "ct_no_of_1to4_family_unit", "application_date_indicator")
-#     temp[, asofyear := 2017]
-#   }
-#   
-#   temp <- temp[, (cols_to_drop) := NULL, with = FALSE]
-#   
-#   db_path <- paste0("/processed_data/hmda/", sub("\\..*$", "", fn), ".db")
-#   con <- dbConnect(RSQLite::SQLite(), db_path)
-#   dbWriteTable(con, sub("\\..*$", "", fn), temp)
-#   dbDisconnect(con)
-# }
+# dbWriteTable(con,sub("\\..*$", "", fn),hmda,append=T)
 
 
 # old code
