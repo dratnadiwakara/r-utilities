@@ -1,0 +1,137 @@
+---
+title: "sod-data-clean"
+format: html
+editor: visual
+---
+
+```{r}
+library(data.table)
+library(dplyr)
+
+# Get list of all CSV files in the folder
+file_list <- list.files(path = "D:/OneDrive/research-data/SOD/data", pattern = "ALL_\\d{4}\\.csv", full.names = TRUE)
+
+# Function to read each CSV file and add a 'Year' column
+read_and_add_year <- function(file) {
+  year <- gsub(".*_(\\d{4})\\.csv", "\\1", file)  # Extract the year from the file name
+  dt <- fread(file)  # Read the file as a data.table
+  dt[, Year := as.numeric(year)]  # Add a new column 'Year'
+  return(dt)
+}
+```
+
+
+```{r}
+combined_data <- rbindlist(lapply(file_list, read_and_add_year),fill=T)
+setorder(combined_data,-YEAR)
+```
+
+
+```{r}
+keep_cols <- c("YEAR","UNINUMBR","DEPSUMBR","RSSDID","CERT")
+
+branch_year <- combined_data[,..keep_cols]
+branch_year[, DEPSUMBR := as.numeric(gsub(",", "", DEPSUMBR))]
+
+saveRDS(branch_year,"data/sod-branch-year-1987-2024.rds")
+```
+
+
+
+```{r}
+keep_cols <- c("UNINUMBR","ADDRESBR","ZIPBR",
+               "SIMS_ESTABLISHED_DATE","SIMS_LATITUDE","SIMS_LONGITUDE",
+               "STCNTYBR","YEAR")
+branch_chars <- combined_data[,..keep_cols]
+branch_chars <- branch_chars %>% distinct(UNINUMBR,.keep_all = T)
+
+saveRDS(branch_chars,"data/sod-branch-chars-1987-2024.rds")
+```
+
+
+```{r}
+keep_cols <- c("RSSDID","RSSDHCR","CERT","FED","REGAGNT","ASSET","CHARTER","DEPDOM","DEPSUM","NAMEFULL","YEAR","NAMEHCR","ADDRESS","ZIP","STCNTY")
+bank_chars <- combined_data[,..keep_cols]
+bank_chars <- bank_chars %>% distinct()
+bank_chars[, DEPDOM := as.numeric(gsub(",", "", DEPDOM))]
+bank_chars[, DEPSUM := as.numeric(gsub(",", "", DEPSUM))]
+
+setorder(bank_chars,-DEPSUM)
+
+bank_chars <- bank_chars %>% distinct(RSSDID,YEAR,.keep_all = T)
+
+saveRDS(bank_chars,"data/sod-bank-chars-1987-2024.rds")
+```
+
+
+
+```{r}
+branch_year <- readRDS("data/sod-branch-year-1987-2024.rds")
+```
+
+```{r}
+df <- branch_year[UNINUMBR %in% unique(closure_data[closure==1]$UNINUMBR)]
+```
+
+
+```{r}
+max_year = 2024
+closure_data <- df %>%
+                arrange(UNINUMBR,YEAR) %>%
+                group_by(UNINUMBR) %>%
+                mutate(
+                  lag_deposits = lag(DEPSUMBR),
+                  next_year = lead(YEAR),
+                  future_max = rev(cummax(rev(DEPSUMBR))), 
+                  drop_pct_current = (lag_deposits-DEPSUMBR)/lag_deposits,
+                  drop_pct_current = replace_na(drop_pct_current, 0),
+                  drop_pct_future_max = (lag_deposits-future_max)/lag_deposits,
+                  drop_pct_future_max = replace_na(drop_pct_future_max, 0),
+                  closed_na_next_yr = ifelse(is.na(next_year) & YEAR < max_year, 1, 0),
+                  closed_na_next_yr_dep_drop = ifelse(closed_na_next_yr==1 |(drop_pct_current>0.9 & drop_pct_future_max>0.9),1,0),
+                  keep = lag(cumsum(closed_na_next_yr == 1 | closed_na_next_yr_dep_drop == 1),default=0)<=0
+
+                ) %>%  
+                ungroup() %>%
+                filter(keep) %>%
+                select(-keep)  
+
+closure_data <- data.table(closure_data)
+View(closure_data[UNINUMBR==4287]) #4287 7197 8807 8807 8807 8807
+```
+
+
+```{r}
+closure_data <- branch_year %>%
+                arrange(UNINUMBR,YEAR) %>%
+                group_by(UNINUMBR) %>%
+                mutate(
+                  closure = ifelse(YEAR == 2024, 0, 
+                  # Check if branch does not appear in the next year
+                  ifelse(lead(UNINUMBR) != UNINUMBR, 1, 
+                  # Check if x1 == 0 and remains <= 0 for the same branch in future years
+                  ifelse(DEPSUMBR == 0 & cummax(lead(DEPSUMBR, order_by = YEAR, default = -Inf)) <= 0, 1, 0)))) %>%
+  ungroup()
+
+closure_data <- data.table(closure_data)
+```
+
+merged_data <- merged_data %>%
+  arrange(branch_id, year) %>%
+  group_by(branch_id) %>%
+  mutate(
+    # Check if it's the last year in the data
+    closure = ifelse(year == max(year), 0, 
+              # Check if branch does not appear in the next year
+              ifelse(lead(branch_id) != branch_id, 1, 
+              # Check if x1 == 0 and remains <= 0 for the same branch in future years
+              ifelse(x1 == 0 & cummax(lead(x1, order_by = year, default = -Inf)) <= 0, 1, 0)))) %>%
+  ungroup()
+
+```{r}
+library(ggplot2)
+t <- branch_year[,.N,by=YEAR]
+
+ggplot(t[YEAR>=2017],aes(x=YEAR,y=N))+geom_line()
+```
+
