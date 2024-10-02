@@ -1,0 +1,124 @@
+---
+title: "variable-contribution-plot"
+format: html
+editor: source
+---
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Example data (similar to your contribution data)
+data <- data.table(
+  Observation = rep(1:3, each = 4),
+  Variable = rep(c("Intercept", "wt", "hp","ts"), 3),
+  Contribution = c(37.22, -11.63, 3.49,-2, 37.22, -13.57, 4.13,-3, 37.22, -15.51, 4.76,-4)
+)
+
+custom_names <- c("Custom Obs 1", "Custom Obs 2", "Custom Obs 3")
+data[, Custom_Name := rep(custom_names, each = 4)]
+
+pred <- data[,.(pred_y=sum(Contribution)),by=Observation]
+# Separate positive and negative values, and create columns for ymin and ymax
+positive_data <- data[Contribution>0] %>%
+  group_by(Observation) %>%
+  arrange(Observation, Contribution) %>%
+  mutate(
+    ymin = lag(cumsum(Contribution), default = 0),
+    ymax = ymin + Contribution
+  ) %>%
+  data.table
+
+
+
+negative_data <- data[Contribution<0]
+
+
+negative_data <- negative_data %>%
+  group_by(Observation) %>%
+  arrange(Observation, Contribution) %>%
+  mutate(
+    # Adjust ymax for positive
+    ymin = lag(cumsum(Contribution), default = 0),# Adjust ymin for negative values
+    ymax = ymin + Contribution
+  ) %>%
+  data.table
+
+pos_max <- positive_data[,.(positive_max=max(ymax)),by=Observation]
+negative_data <- merge(negative_data,pos_max,by="Observation")
+negative_data[,ymin:=ymin+positive_max]
+negative_data[,ymax:=ymax+positive_max]
+# Separate positive and negative contributions
+# positive_data <- data %>% filter(Contribution > 0)
+# negative_data <- data %>% filter(Contribution < 0)
+
+# Plot using geom_rect to manually control positive and negative bar stacking
+ggplot() +
+  # Plot positive contributions
+  geom_rect(data = positive_data, aes(xmin = as.numeric(Observation) - 0.1,
+                                      xmax = as.numeric(Observation) + 0.1,
+                                      ymin = ymin,
+                                      ymax = ymax,
+                                      fill = Variable),alpha=0.5) +
+  # Plot negative contributions
+  geom_rect(data = negative_data, aes(xmin = as.numeric(Observation) + 0.1,
+                                      xmax = as.numeric(Observation) + 0.3,
+                                      ymin = ymin,
+                                      ymax = ymax,
+                                      fill = Variable),alpha=0.5) +
+  geom_point(data=pred,aes(x=as.numeric(Observation) + 0.2,y=pred_y,color="Predicted value"),size=4)+
+  scale_x_continuous(breaks = unique(data$Observation), labels = unique(data$Custom_Name)) + # Use custom names on x-axis
+  labs(x = "Observation", y = "Contribution to Predicted Value", 
+       title = "Decomposition of Positive and Negative Contributions using geom_rect") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),legend.position = "bottom",legend.title = element_blank()) #
+
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+
+# Fit an example linear model
+model <- lm(mpg ~ wt + hp, data = mtcars)
+
+# Create a new dataset for prediction
+new_data <- data.frame(wt = c(3, 3.5, 4), hp = c(110, 130, 150))
+
+# Get the coefficients from the model
+coefficients <- coef(model)
+
+# Add an intercept column to the new data
+new_data_with_intercept <- cbind(Intercept = 1, new_data)
+
+# Multiply the coefficients by the corresponding new data values to get contributions
+contributions <- as.data.frame(t(apply(new_data_with_intercept, 1, function(x) x * coefficients)))
+
+# Add a column for the observation ID
+contributions$Observation <- 1:nrow(contributions)
+
+# Gather the contributions into a long format for ggplot
+contributions_long <- gather(contributions, key = "Variable", value = "Contribution", -Observation)
+
+# Separate positive and negative contributions for stacking
+contributions_long <- contributions_long %>%
+  mutate(Contribution_Type = ifelse(Contribution > 0, "Positive", "Negative"))
+
+# Plot the stacked bar chart with negative contributions starting from the x-axis
+ggplot(contributions_long, aes(x = factor(Observation), y = Contribution, fill = Variable)) +
+  geom_bar(data = subset(contributions_long, Contribution_Type == "Positive"), 
+           stat = "identity") +
+  geom_bar(data = subset(contributions_long, Contribution_Type == "Negative"), 
+           stat = "identity") +
+  labs(x = "Observation", y = "Contribution to Predicted Value", 
+       title = "Decomposition of Predicted Values with Positive and Negative Contributions") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set1")
+
+```
+
