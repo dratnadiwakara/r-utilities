@@ -1,0 +1,69 @@
+---
+title: "acs-county-level-data"
+format: html
+editor: source
+---
+
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(stringr)
+library(tidycensus)
+library(dplyr)
+```
+
+
+```{r}
+census_api_key("c8809455cbebf7aa64ff3f98b394c8f25fdf8846", install = TRUE)
+```
+```{r}
+# Load variable definitions for the 2020 ACS 5-year estimates
+variables_2020 <- load_variables(2020, "acs5", cache = TRUE)
+
+# View the first few rows
+variables_2020 <- data.table(variables_2020)
+
+```
+
+```{r}
+# Define the variables you need from ACS
+acs_vars <- c(
+  median_income = "B19013_001",          # Median household income
+  pct_college_educated = "B15003_022",   # Bachelor's degree (age 25+)
+  total_population_25plus = "B15003_001",# Total population 25+
+  median_age = "B01002_001",             # Median age
+  white_population = "B02001_002",       # White alone population
+  total_population = "B01003_001"        # Total population
+)
+
+# Get the data for all counties in 2020
+acs_data <- get_acs(
+  geography = "county", 
+  variables = acs_vars, 
+  year = 2020, 
+  survey = "acs5",
+  output = "wide"
+)
+
+# Calculate percentage of population with a bachelor's degree
+acs_data <- acs_data %>%
+  mutate(
+    pct_college_educated = 100 * (pct_college_educatedE / total_population_25plusE),  # Bachelor's degree holders as a percentage of 25+ population
+    white_population_pct = 100 * (white_populationE / total_populationE),   # White population as a percentage of total population
+    median_income = median_incomeE,
+    median_age = median_ageE
+  ) %>%
+  select(GEOID, median_income, pct_college_educated, median_age, white_population_pct) %>%
+  rename(
+    county_code = GEOID
+  )
+
+# View the resulting data
+head(acs_data)
+
+```
+```{r}
+saveRDS(acs_data,"C:/Users/dimut/Downloads/acs_county_2020.rds")
+```
+

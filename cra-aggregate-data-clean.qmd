@@ -1,0 +1,73 @@
+---
+title: "cra-aggr-data-clean"
+format: html
+editor: source
+---
+
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(stringr)
+```
+
+```{r}
+col_widths <- c(
+  5, 4, 1, 1, 2, 3, 5, 7, 1, 1, 3, 3, 
+  10, 10, 10, 10, 10, 10, 10, 10, 29
+)
+
+col_names <- c(
+  "Table_ID", "Activity_Year", "Loan_Type", "Action_Taken_Type", 
+  "State", "County", "MSA_MD", "Census_Tract", 
+  "Split_County_Indicator", "Population_Classification", 
+  "Income_Group_Total", "Report_Level", 
+  "Num_Loans_Origination_Less_100K", "Total_Loan_Amount_Less_100K", 
+  "Num_Loans_Origination_100K_250K", "Total_Loan_Amount_100K_250K", 
+  "Num_Loans_Origination_250K_1M", "Total_Loan_Amount_250K_1M", 
+  "Num_Loans_Gross_Rev_Less_1M", "Total_Loan_Amount_Gross_Rev_Less_1M", 
+  "Filler"
+)
+
+
+folder_path <- "C:/Users/dimut/Downloads/cra aggr/"  # Replace with your folder path
+
+# Get all file names in the directory that match the pattern (e.g., .dat files)
+file_list <- list.files(folder_path, pattern = "*.dat", full.names = TRUE)
+
+# Loop over each file, process it, and save the resulting data frame
+for (file in file_list) {
+  
+  print(file)
+  
+  # Read the fixed-width file
+  df <- read.fwf(file, widths = col_widths, col.names = col_names, stringsAsFactors = FALSE)
+  
+  # Convert to data.table for easier processing
+  df <- data.table(df)
+  
+  # Filter for report level 200 (County Total)
+  df <- df[Report_Level == 200]
+  
+  # Create county code by padding the State and County fields
+  df[, county_code := paste0(str_pad(State, 2, "left", "0"), str_pad(County, 3, "left", "0"))]
+  
+  # Replace NA values with 0
+  df[is.na(df)] <- 0
+  
+  # Compute loan amounts
+  df[, loan_amount_amt_lt_1m := Total_Loan_Amount_Less_100K + Total_Loan_Amount_100K_250K + Total_Loan_Amount_250K_1M]
+  df[, loan_amount_rev_lt_1m := Total_Loan_Amount_Gross_Rev_Less_1M]
+  
+  # Keep the relevant columns
+  df <- df[, .(Activity_Year, county_code, loan_amount_amt_lt_1m, loan_amount_rev_lt_1m)]
+  
+  # Save the data frame as an RDS file (or you can save as CSV if you prefer)
+  saveRDS(df, file = paste0(folder_path, "processed_", basename(file), ".rds"))
+  
+  print(head(df))
+  # Optional: Save as CSV
+  # write.csv(df, file = paste0(folder_path, "processed_", basename(file), ".csv"), row.names = FALSE)
+}
+```
+
