@@ -1,0 +1,49 @@
+---
+title: "county-level-gdp"
+format: html
+editor: source
+---
+
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(stringr)
+library(tidycensus)
+library(dplyr)
+```
+
+
+
+```{r}
+# https://www.bea.gov/data/gdp/gdp-county-metro-and-other-areas
+df <- fread("C:/Users/dimut/Downloads/county_gdp.csv")
+df[,county:=paste(county,"County")]
+df <- df %>%
+      mutate(
+        county_cleaned = iconv(county, from = "latin1", to = "UTF-8", sub = ""),
+        county_first_5=tolower(substr(county_cleaned,1,8))
+      )
+```
+
+```{r}
+fips_codes <- tidycensus::fips_codes %>%
+  select(state_name, county, state_code, county_code) %>%
+  mutate(county_fips = paste0(state_code, county_code))
+
+fips_codes <- fips_codes %>%
+      mutate(
+        county_cleaned = iconv(county, from = "latin1", to = "UTF-8", sub = ""),
+        county_first_5=tolower(substr(county_cleaned,1,8))
+      )
+```
+
+
+```{r}
+merged <- merge(df,fips_codes,by.x=c("state","county_first_5"),by.y=c("state_name","county_first_5"))
+dup_counties <- merged[duplicated(merged$county_fips)]$county_fips
+merged <- merged[!county_fips %in% dup_counties,c("county_fips","gdp_gr_2022","gdp_gr_2021")]
+merged[,gdp_gr_2021:=as.numeric(gdp_gr_2021)]
+merged[,gdp_gr_2022:=as.numeric(gdp_gr_2022)]
+```
+

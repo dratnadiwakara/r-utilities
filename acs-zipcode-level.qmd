@@ -27,46 +27,6 @@ variables_2020 <- data.table(variables_2020)
 ```
 
 ```{r}
-# Define the variables you need from ACS
-acs_vars <- c(
-  median_income = "B19013_001",          # Median household income
-  pct_college_educated = "B15003_022",   # Bachelor's degree (age 25+)
-  total_population_25plus = "B15003_001",# Total population 25+
-  median_age = "B01002_001",             # Median age
-  white_population = "B02001_002",       # White alone population
-  total_population = "B01003_001"        # Total population
-)
-
-# Get the data for all counties in 2020
-acs_data <- get_acs(
-  geography = "county", 
-  variables = acs_vars, 
-  year = 2020, 
-  survey = "acs5",
-  output = "wide"
-)
-
-# Calculate percentage of population with a bachelor's degree
-acs_data <- acs_data %>%
-  mutate(
-    pct_college_educated = 100 * (pct_college_educatedE / total_population_25plusE),  # Bachelor's degree holders as a percentage of 25+ population
-    white_population_pct = 100 * (white_populationE / total_populationE),   # White population as a percentage of total population
-    median_income = median_incomeE,
-    median_age = median_ageE
-  ) %>%
-  select(GEOID, median_income, pct_college_educated, median_age, white_population_pct) %>%
-  rename(
-    county_code = GEOID
-  )
-
-# View the resulting data
-head(acs_data)
-
-saveRDS(acs_data,"C:/Users/dimut/Downloads/acs_county_2020.rds")
-```
-
-
-```{r}
 tract_zip_crosswalk <- fread('D:/OneDrive/research-data/Crosswalk Files/ZIP_TRACT.csv')
 tract_zip_crosswalk[,ZIP:=str_pad(ZIP,5,"left","0")]
 tract_zip_crosswalk[,TRACT:=as.character(TRACT)]
@@ -91,8 +51,8 @@ states <- c("AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
 # Variables to retrieve
 acs_vars <- c(
   median_income = "B19013_001",          # Median household income
-  pct_college_educated = "B15003_022",   # Bachelor's degree (age 25+)
-  total_population_25plus = "B15003_001",# Total population 25+
+  pct_college_educated = "B23006_023",   # Bachelor's degree (age 25+)
+  total_education = "B23006_001",# Total population 25+
   median_age = "B01002_001",             # Median age
   white_population = "B02001_002",       # White alone population
   total_population = "B01003_001"        # Total population
@@ -102,41 +62,52 @@ acs_vars <- c(
 all_states_data <- list()
 
 # Loop through each state to get ACS data at the tract level
-for (state in states) {
-  message("Getting data for state: ", state)
-  
-  # Get the ACS data for the state at the tract level
-  state_data <- get_acs(
-    geography = "tract",
-    variables = acs_vars,
-    state = state,
-    year = 2020,
-    survey = "acs5",
-    output = "wide"
-  )
-  
-  # Store the data for the state
-  all_states_data[[state]] <- state_data
+for(yr in 2010:2022) {
+  for (state in states) {
+    state_yr <-paste(state,yr)
+    message("Getting data for state: ", state_yr)
+    
+    # Get the ACS data for the state at the tract level
+    state_data <- get_acs(
+      geography = "tract",
+      variables = acs_vars,
+      state = state,
+      year = yr,
+      survey = "acs5",
+      output = "wide"
+    )
+    
+    state_data <- data.table(state_data)
+    state_data[,yr:=yr]
+    
+    # Store the data for the state
+    all_states_data[[state_yr]] <- state_data
+  }
 }
 
 # Combine all the state data into a single data frame
 acs_data_combined <- bind_rows(all_states_data)
 
-acs_data <- acs_data %>%
+acs_data <- acs_data_combined %>%
   mutate(
-    pct_college_educated = 100 * (pct_college_educatedE / total_population_25plusE),  # Bachelor's degree holders as a percentage of 25+ population
+    pct_college_educated = 100 * (pct_college_educatedE / total_educationE),  # Bachelor's degree holders as a percentage of 25+ population
     white_population_pct = 100 * (white_populationE / total_populationE),   # White population as a percentage of total population
     median_income = median_incomeE,
     median_age = median_ageE
   ) %>%
   select(GEOID, median_income, pct_college_educated, median_age, white_population_pct) %>%
   rename(
-    county_code = GEOID
+    tract = GEOID
   )
 
 # Load your tract-to-ZIP crosswalk
 # Assuming it is called `tract_zip_crosswalk` with columns: GEOID (tract) and ZIP
 ```
+
+
+
+
+
 ```{r}
 library(RSQLite)
 library(DBI)
