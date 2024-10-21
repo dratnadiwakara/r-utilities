@@ -1,4 +1,4 @@
-libray(simplermarkdown)
+library(simplermarkdown)
 
 summary_stats_function <- function(df, column_list, group_by = NULL) {
   # Select the specified columns from call_chg
