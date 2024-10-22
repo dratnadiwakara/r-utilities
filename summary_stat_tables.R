@@ -54,7 +54,7 @@ mean_by_group <- function(df, columns_to_include, group_var, win_probs = c(0, 1)
   
   # Filter data and calculate the winsorized mean for the specified columns
   result_table <- df[, lapply(.SD, function(x) list(winsorized_Mean = round(mean(
-    Winsorize(x, quantile(x, probs = win_probs, na.rm = FALSE)), na.rm = TRUE), 3))), 
+    Winsorize(x, quantile(x, probs = win_probs, na.rm = TRUE)), na.rm = TRUE), 3))), 
     by = group_var, .SDcols = columns_to_include]
   
   # Merge the count table with the result table
