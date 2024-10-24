@@ -1,0 +1,38 @@
+# Install necessary packages if not already installed
+# install.packages("RQuantLib")
+
+library(RQuantLib)
+
+FindFaceValueIndiv <- function(mu, F, ival, sig, T, r, d) {
+  # Calculate the call and put prices using the Black-Scholes formula
+  option_price <- EuropeanOption(type = "call", value = exp(ival), 
+                                 underlying = F, strike = F, dividendYield = d, 
+                                 riskFreeRate = r, maturity = T, volatility = sig)
+  
+  # Extract the call price from the result (assuming P is the call price)
+  P <- option_price$value
+  
+  # Calculate L as in the MATLAB code
+  L <- F * exp(-r * T) - P
+  
+  # Calculate newmu
+  newmu <- (1 / T) * log(F / L)
+  
+  # Calculate the error
+  err <- mu - newmu
+  
+  # Return the results
+  return(list(err = err, newmu = newmu, L = L))
+}
+
+# Example usage (assuming reasonable parameter values)
+mu <- 0.05
+F <- 100
+ival <- 1
+sig <- 0.2
+T <- 1
+r <- 0.03
+d <- 0.02
+
+result <- FindFaceValueIndiv(mu, F, ival, sig, T, r, d)
+print(result)
