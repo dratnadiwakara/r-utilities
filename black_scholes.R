@@ -13,15 +13,15 @@ black_scholes <- function(S, X, Time, r, sigma, type) {
   
   return(price)
 }
-
-# Parameters
-S <- 100      # Stock price
-X <- 105      # Strike price
-Time <- 1     # Time to expiration (in years)
-r <- 0.05     # Risk-free rate
-sigma <- 0.2  # Volatility
-type <- "put"  # "call" or "put"
-
-# Calculate the option price
-option_price <- black_scholes(S, X, Time, r, sigma, type)
-print(option_price)
+# 
+# # Parameters
+# S <- 100      # Stock price
+# X <- 105      # Strike price
+# Time <- 1     # Time to expiration (in years)
+# r <- 0.05     # Risk-free rate
+# sigma <- 0.2  # Volatility
+# type <- "put"  # "call" or "put"
+# 
+# # Calculate the option price
+# option_price <- black_scholes(S, X, Time, r, sigma, type)
+# print(option_price)
