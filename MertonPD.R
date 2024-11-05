@@ -1,3 +1,4 @@
+# Acharya, Viral V., Deniz Anginer, and A. Joseph Warburton. "The end of market discipline? Investor expectations of implicit government guarantees." Investor expectations of implicit government guarantees (May 1, 2016) (2016).
 # Load necessary package
 library(stats)
 
