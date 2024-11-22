@@ -52,7 +52,7 @@ create_regressions_dataframe <- function(models) {
     reg_output <- rbind(model_row, dep_var_row, reg_output, fill = TRUE)
     
     # Rename columns for the current model
-    names(reg_output)[2:4] <- paste0(names(models)[[i]], "_", names(reg_output)[2:4])
+    names(reg_output)[2:4] <- paste0(names(models)[[i]],"_",all.vars(formula(models[[i]]))[1], "_", names(reg_output)[2:4])
     
     if (is.null(df)) {
       df <- reg_output
