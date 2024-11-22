@@ -1,3 +1,31 @@
+create_regression_dataframe <- function(model) {
+  # Extract coefficients and standard errors
+  coef_table <- tidy(model)[, c("term", "estimate", "std.error")]
+  colnames(coef_table) <- c("Variable", "Coefficient", "SE")
+  coef_table <- data.table(coef_table)
+  coef_table[, stars := fifelse(abs(Coefficient / SE) > 2.58, "***",
+                                fifelse(abs(Coefficient / SE) > 1.96, "**",
+                                        fifelse(abs(Coefficient / SE) > 1.65, "*", "")))]
+  
+  
+  # Add summary statistics (Observations, R², Adjusted R²)
+  model_summary <- summary(model)
+  stats <- data.table(
+    Variable = c("Observations", "R2", "Adjusted R2"),
+    Coefficient = c(
+      nobs(model), 
+      model_summary$r.squared, 
+      model_summary$adj.r.squared
+    )
+  )
+  stats[,SE:=NA]
+  stats[,stars:=NA]
+  
+  # Combine coefficients and statistics
+  final_df <- rbind(coef_table, stats)
+  return(final_df)
+}
+
 create_regressions_dataframe <- function(models) {
   df <- NULL
   for (i in 1:length(models)) {
