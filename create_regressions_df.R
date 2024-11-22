@@ -50,6 +50,7 @@ create_regressions_dataframe <- function(models) {
     
     # Combine rows
     reg_output <- rbind(model_row, dep_var_row, reg_output, fill = TRUE)
+    reg_output <- reg_output[, c("Variable", "Coefficient", "SE", "stars"), with = FALSE]
     
     # Rename columns for the current model
     names(reg_output)[2:4] <- paste0(names(models)[[i]],"_",all.vars(formula(models[[i]]))[1], "_", names(reg_output)[2:4])
