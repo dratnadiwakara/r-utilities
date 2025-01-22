@@ -10,6 +10,8 @@ rm(list=ls())
 library(data.table)
 library(stringr)
 ```
+https://www.ffiec.gov/cra/craflatfiles.htm
+
 
 ```{r}
 col_widths <- c(
@@ -33,7 +35,7 @@ col_names <- c(
 folder_path <- "C:/Users/dimut/Downloads/cra aggr/"  # Replace with your folder path
 
 # Get all file names in the directory that match the pattern (e.g., .dat files)
-file_list <- list.files(folder_path, pattern = "*.dat", full.names = TRUE)
+file_list <- list.files(folder_path, pattern = ".dat$", full.names = TRUE)
 
 # Loop over each file, process it, and save the resulting data frame
 for (file in file_list) {
@@ -45,6 +47,8 @@ for (file in file_list) {
   
   # Convert to data.table for easier processing
   df <- data.table(df)
+  
+  df <- df[Table_ID=="A1-1 "]
   
   # Filter for report level 200 (County Total)
   df <- df[Report_Level == 200]
