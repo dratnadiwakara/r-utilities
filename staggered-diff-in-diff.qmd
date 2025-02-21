@@ -1,0 +1,90 @@
+---
+title: "staggered-diff-in-diff"
+format: html
+editor: source
+---
+
+```{r}
+library(tidyverse)
+library(modelsummary)
+library(fixest)
+library(causaldata)
+
+# Load dataset
+od <- causaldata::organ_donations
+
+# Define treatment indicators
+od <- od %>%
+  mutate(
+    treat = as.integer(State == "California"), # Treated if in California
+    post = as.integer(Quarter_Num >= 4),       # Post-treatment period
+    Treated = treat * post,                     # Interaction for DiD,
+    x1 = runif(nrow(od))
+  )
+
+# Define event time relative to treatment
+od <- od %>%
+  mutate(event_time = Quarter_Num - 4)  # Set treatment start (Quarter_Num = 4) as time 0
+
+# Keep only relevant event-time range (-3 to +2)
+od <- od %>% filter(event_time >= -3 & event_time <= 2)
+
+# Run Event Study Regression using `i(event_time, treat)`
+clfe <- feols(Rate ~ i(event_time, treat, ref = -1) +x1| State + Quarter, data = od)
+
+# Display results
+msummary(clfe, stars = c('*' = .1, '**' = .05, '***' = .01))
+
+# Plot event study coefficients
+iplot(clfe, main = "Event Study: Staggered DiD (California)")
+
+```
+
+
+
+
+
+```{r}
+library(tidyverse)
+library(did)
+library(causaldata)
+
+# Load dataset
+od <- causaldata::organ_donations
+
+# Create a numeric state id
+od <- od %>% mutate(stateid = as.numeric(as.factor(State)))
+
+# Assign treatment start times per state
+od <- od %>%
+  mutate(treat_quarter = case_when(
+    State == "California" ~ 4,  # CA treatment starts in Q4
+    State == "Arizona" ~ 5,      # AZ treatment starts in Q5
+    TRUE ~ 0                     # Never treated firms get 0 (control group)
+  ),
+  ,                     # Interaction for DiD,
+    x1 = runif(nrow(od)))
+
+# Run Callaway & Sant'Anna Estimation with numeric idname
+cs_results <- att_gt(
+  yname = "Rate",             # Outcome variable
+  tname = "Quarter_Num",      # Time variable
+  idname = "stateid",         # Panel identifier (numeric id)
+  gname = "treat_quarter",    # Treatment timing variable
+  xformla = ~ x1,      # Controls for x1 and x2
+  data = od,
+  est_method = "reg",         # Regression-adjusted
+  control_group = "nevertreated",  # Use never-treated as the control group
+  clustervars = "stateid"     # Cluster standard errors by stateid
+)
+
+# Aggregate results for event study
+cs_agg <- aggte(cs_results, type = "dynamic", min_e = -3, max_e = 2)
+
+# Plot event-study results
+ggdid(cs_agg) + ggtitle("Event Study: Callaway & Sant’Anna (2021)")
+
+
+```
+
+

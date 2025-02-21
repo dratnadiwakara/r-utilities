@@ -14,10 +14,8 @@ https://www.ffiec.gov/cra/craflatfiles.htm
 
 
 ```{r}
-col_widths <- c(
-  5, 4, 1, 1, 2, 3, 5, 7, 1, 1, 3, 3, 
-  10, 10, 10, 10, 10, 10, 10, 10, 29
-)
+# 2012 onwards
+
 
 col_names <- c(
   "Table_ID", "Activity_Year", "Loan_Type", "Action_Taken_Type", 
@@ -42,6 +40,16 @@ for (file in file_list) {
   
   print(file)
   
+  yr <- as.numeric(str_extract(file,"\\d{4}"))
+  
+  if(yr %in% 2004:2024) {
+    col_widths <- c(5, 4, 1, 1, 2, 3, 5, 7, 1, 1, 3, 3, 
+                    10, 10, 10, 10, 10, 10, 10, 10, 29)
+  } 
+  if(yr %in% 1997:2003) {
+    col_widths <- c(5, 4, 1, 1, 2, 3, 4, 7, 1, 1, 3, 3, 
+                    6, 8, 6, 8, 6, 8, 6, 8, 23)
+  }
   # Read the fixed-width file
   df <- read.fwf(file, widths = col_widths, col.names = col_names, stringsAsFactors = FALSE)
   
@@ -50,8 +58,15 @@ for (file in file_list) {
   
   df <- df[Table_ID=="A1-1 "]
   
-  # Filter for report level 200 (County Total)
-  df <- df[Report_Level == 200]
+  unique_report_levels <- unique(df$Report_Level)
+  
+  if(200 %in% unique_report_levels) {
+      # Filter for report level 200 (County Total)
+      df <- df[Report_Level == 200]
+  } else {
+    break
+  }
+
   
   # Create county code by padding the State and County fields
   df[, county_code := paste0(str_pad(State, 2, "left", "0"), str_pad(County, 3, "left", "0"))]
