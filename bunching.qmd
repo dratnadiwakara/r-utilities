@@ -1,0 +1,140 @@
+---
+title: "bunching"
+format: html
+editor: source
+---
+
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(stringr)
+
+# Set seed for reproducibility
+set.seed(123)
+```
+```{r}
+n <- 10000
+cll <- 453100  # 2018 conforming loan limit for this county
+
+# Generate synthetic loan amounts:
+# - Mostly uniform below CLL
+# - Some bunching just below CLL
+# - Fewer loans above CLL (due to constraint)
+loan_amount <- c(
+  runif(n * 0.7, 200000, cll * 0.97),                 # bulk of loans
+  runif(n * 0.2, cll * 0.97, cll),                    # bunching region
+  runif(n * 0.1, cll, cll * 1.2)                      # above limit (fewer loans)
+)
+
+# Create data frame
+df <- data.frame(
+  loan_amount = loan_amount,
+  county = "SyntheticCounty",
+  conforming_limit = cll
+)
+
+# Normalize loan amount by conforming limit
+df <- df %>%
+  mutate(normalized_loan = loan_amount / conforming_limit)
+```
+
+
+```{r}
+bin_width <- 0.01
+bin_edges <- seq(0.5, 1.5, by = bin_width)
+
+# Create bins
+df$bin <- cut(df$normalized_loan, breaks = bin_edges, include.lowest = TRUE)
+
+# Aggregate counts per bin
+bin_data <- df %>%
+  group_by(bin) %>%
+  summarise(count = n()) %>%
+  mutate(
+    bin_mid = sapply(str_extract_all(as.character(bin), "[0-9.]+"), function(x) mean(as.numeric(x))),
+    bin_centered = bin_mid - 1  # Center around kink at 1.0
+  )
+
+```
+
+
+```{r}
+exclude_window <- 0.025
+fit_data <- bin_data %>%
+  filter(abs(bin_centered) > exclude_window)
+
+# Fit 4th-degree polynomial
+fit <- lm(count ~ poly(bin_centered, 4, raw = TRUE), data = fit_data)
+
+# Predict full density
+bin_data$predicted <- predict(fit, newdata = bin_data)
+```
+
+
+```{r}
+ggplot(bin_data,aes(x=bin_mid))+geom_line(aes(y=count),color="red")+geom_line(aes(y=predicted),color="blue")
+```
+```{r}
+bunching_data <- bin_data %>%
+  filter(abs(bin_centered) <= exclude_window)
+
+# Excess mass = sum(actual - predicted) / total predicted
+excess_mass <- sum(bunching_data$count - bunching_data$predicted,na.rm=T) / sum(bin_data$predicted,na.rm=T)
+
+print(excess_mass)
+```
+
+
+```{r}
+ggplot(bin_data, aes(x = bin_mid, y = count)) +
+  geom_col(fill = "lightgray") +
+  geom_line(aes(y = predicted), color = "blue", size = 1) +
+  geom_vline(xintercept = 1.0, linetype = "dashed", color = "red") +
+  labs(
+    x = "Loan Amount / Conforming Limit",
+    y = "Number of Loans",
+    title = "Bunching at the Conforming Loan Limit (Synthetic County)"
+  )
+```
+
+```{r}
+
+
+# ----------------------------
+# 1. Generate synthetic dataset
+# ----------------------------
+
+# Parameters
+
+
+# ----------------------------
+# 2. Bin data around the kink
+# ----------------------------
+
+# Define bin width and edges
+
+# ----------------------------
+# 3. Estimate counterfactual (exclude window around kink)
+# ----------------------------
+
+# Exclude ±0.02 window for fitting
+
+
+# ----------------------------
+# 4. Calculate excess mass statistic
+# ----------------------------
+
+# Define bunching region
+
+
+cat(sprintf("Excess mass statistic: %.4f\n", excess_mass))
+
+# ----------------------------
+# 5. Plot observed vs predicted
+# ----------------------------
+
+
+
+```
+
