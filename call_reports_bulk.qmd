@@ -1,0 +1,402 @@
+---
+title: "call reports - UBPR Ratios"
+format: html
+editor: source
+---
+
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(dplyr)
+
+# Set your folder path
+folder_path <- "C:/Users/dimut/Downloads/t/"  # Replace with your actual path
+
+# Get list of all .txt files in the folder
+file_list <- list.files(path = folder_path, pattern = "\\.txt$", full.names = TRUE)
+
+# Initialize list for data tables and description mappings
+data_list <- list()
+desc_list <- list()
+```
+
+
+```{r}
+for (file in file_list) {
+  # Read the first two rows separately
+  header <- fread(file, nrows = 1)
+  descriptions <- fread(file, skip = 1, nrows = 1, header = FALSE)
+  
+  # Create description mapping
+  desc_dt <- data.table(
+    variable_name = as.character(header[1, ]),
+    description = as.character(descriptions[1, ])
+  )
+  
+  # Read the data skipping the first two rows
+  dt <- fread(file, skip = 2, header = FALSE)
+  setnames(dt, as.character(header[1, ]))
+  setnames(dt,"NA","naa")
+  setnames(dt,"ID RSSD","IDRSSD")
+  dt <- dt %>% select(-naa) %>% data.table
+  
+  # Append to lists
+  data_list[[file]] <- dt
+  desc_list[[file]] <- desc_dt
+}
+
+```
+
+```{r}
+
+# Combine all data.tables by IDRSSD
+merged_data <- Reduce(function(x, y) merge(x, y, by = c("Reporting Period","IDRSSD"), all = TRUE), data_list)
+merged_data[,qt:=as.Date(substr(`Reporting Period`,1,10),format="%m/%d/%Y")]
+merged_data <- merged_data[qt=="2024-12-31"]
+merged_data[,c("qt","Reporting Period"):= NULL]
+setnames(merged_data,"UBPR2170.x","assets")
+# write.csv(head(merged_data,100),"merged_data.csv",row.names = F)
+
+# Combine all description mappings
+combined_descriptions <- rbindlist(desc_list, use.names = TRUE, fill = TRUE)
+combined_descriptions <- unique(combined_descriptions)
+```
+
+
+```{r}
+# remove variables with 75% missing values
+vars <- setdiff(names(merged_data), c("IDRSSD"))
+
+# Calculate proportion of non-missing values for each variable
+non_missing_ratio <- merged_data[, lapply(.SD, function(x) mean(!is.na(x))), .SDcols = vars]
+
+# Select variables with at least 75% non-missing values
+valid_ratio <- merged_data[, lapply(.SD, function(x) mean(!is.na(x) & x != 0)), .SDcols = vars]
+
+valid_vars <- names(valid_ratio)[valid_ratio>=0.75]
+merged_data <- merged_data[, c("IDRSSD", valid_vars), with = FALSE]
+```
+
+```{r}
+# remove variables with range > 1000
+numeric_vars <- names(merged_data)[
+  sapply(merged_data, is.numeric) & names(merged_data) != "IDRSSD"
+]
+
+var_range <- merged_data[, lapply(.SD, function(x) diff(range(x, na.rm = TRUE))),
+                         .SDcols = numeric_vars]
+
+vars_under_range <- names(var_range)[var_range[1, ] <= 1000]
+
+filtered_dt <- merged_data[, c("IDRSSD", vars_under_range), with = FALSE]
+```
+
+```{r}
+# remove variables where min = median
+# Identify numeric variables (excluding IDRSSD)
+numeric_vars <- setdiff(names(filtered_dt), "IDRSSD")
+numeric_vars <- numeric_vars[sapply(filtered_dt[, ..numeric_vars], is.numeric)]
+
+# Function to check if 90th percentile equals the minimum
+valid_vars <- sapply(numeric_vars, function(v) {
+  x <- filtered_dt[[v]]
+  x <- x[!is.na(x)]
+  if (length(x) < 10) return(FALSE)  # too few observations
+  q90 <- as.numeric(quantile(x, 0.5, na.rm = TRUE))
+  min_x <- min(x, na.rm = TRUE)
+  return(q90 != min_x)
+})
+
+# Subset only valid variables + IDRSSD
+final_vars <- c("IDRSSD", names(valid_vars[valid_vars]))
+final_dt <- filtered_dt[, ..final_vars]
+
+
+```
+
+
+```{r}
+# rename duplicate variables
+# Identify .x and .y pairs
+x_vars <- grep("\\.x$", names(final_dt), value = TRUE)
+y_vars <- grep("\\.y$", names(final_dt), value = TRUE)
+
+# Extract base names
+x_base <- sub("\\.x$", "", x_vars)
+y_base <- sub("\\.y$", "", y_vars)
+
+# Identify duplicates: keep .x, drop .y
+dup_base <- intersect(x_base, y_base)
+x_to_keep <- paste0(dup_base, ".x")
+y_to_drop <- paste0(dup_base, ".y")
+
+# Drop .y variables
+final_dt[, (y_to_drop) := NULL]
+
+# Rename .x to base name
+setnames(final_dt, old = x_to_keep, new = dup_base)
+
+```
+
+```{r}
+# remove duplicated columns
+unique_cols_idx <- names(final_dt)[!duplicated(names(final_dt))]
+
+# Subset the data.table to keep only the first of duplicated columns
+final_dt <- final_dt[, ..unique_cols_idx]
+
+```
+
+```{r}
+has_variation <- sapply(final_dt, function(x) {
+  if (is.numeric(x) || is.character(x) || is.factor(x)) {
+    ux <- unique(na.omit(x))
+    length(ux) > 1
+  } else {
+    TRUE  # keep unknown types by default
+  }
+})
+
+has_variation <- names(final_dt)[has_variation]
+# Subset to columns with variation
+final_dt <- final_dt[, ..has_variation]
+saveRDS(final_dt,"ubpr_cleand.rds")
+```
+
+```{r}
+combined_descriptions <- combined_descriptions[variable_name %in% names(final_dt)]
+```
+
+
+```{r}
+bank_id <- fread("bank_id.csv")
+tickers <- unique(bank_id$TICKER)
+```
+
+```{r}
+# source("download_quantmod_data.R")
+# prc <- download_price_data(tickers,from="2025-03-15")
+# saveRDS(prc,"price.rds")
+```
+
+```{r}
+prc <- readRDS("price.rds")
+prc[,date:=as.Date(date)]
+```
+
+
+```{r}
+date1 <- as.Date("2025-04-02")
+date2 <- as.Date("2025-04-11")
+
+value_chg <- prc[date %in% c(date1,date2),
+                 .(price=price),by=.(ticker,date)][,dcast(.SD,ticker~date,value.var="price")]
+
+setnames(value_chg,old=c(as.character(date1),as.character(date2)),new=c("price1","price2"))
+value_chg[,price_chg:=(price2-price1)*100/price1]
+value_chg <- value_chg[!is.na(price_chg) & price1>0 & price2>0]
+
+value_chg <- merge(value_chg,bank_id,by.x=c("ticker"),by.y="TICKER")
+value_chg <- value_chg[price_chg<10]
+```
+
+
+```{r}
+final_dt <- readRDS("ubpr_cleand.rds")
+rs <- merge(value_chg[,c("RSSD","price_chg")],final_dt,by.x=c("RSSD"),by.y="IDRSSD")
+rs <- merge(rs,merged_data[,c("IDRSSD","assets")],by.x=c("RSSD"),by.y="IDRSSD")
+rs[,log_assets:=log(assets)]
+rs[,assets:=NULL]
+rs[,c("UBPRD424","UBPRM040","UBPRD485"):=list(NULL)]
+```
+
+
+
+```{r}
+# Assume rs is your data.table with columns: IDRSSD, price_chg, log_assets, plus 300 others
+
+# Identify the 300 variables (exclude IDRSSD, price_chg, log_assets)
+regressors <- setdiff(names(rs), c("RSSD", "price_chg", "log_assets"))
+
+# Initialize results list
+results <- vector("list", length(regressors))
+
+# Loop over each variable
+for (i in seq_along(regressors)) {
+  var <- regressors[i]
+  
+  # Construct formula
+  fml <- as.formula(paste("price_chg ~ log_assets +", var))
+  
+  # Fit model with complete cases
+  fit <- lm(fml, data = rs)
+  s <- summary(fit)
+  
+  # Extract R² and p-value of the third coefficient (the variable of interest)
+  r2 <- s$r.squared
+  pval <- coef(s)[3, 4]
+  
+  # Store result
+  results[[i]] <- data.frame(
+    variable = var,
+    r_squared = r2,
+    p_value = pval,
+    stringsAsFactors = FALSE
+  )
+}
+
+# Combine into one data.frame
+univar_results <- do.call(rbind, results)
+univar_results <- data.table(univar_results)
+
+select_univar <- as.vector(univar_results[r_squared>0.23]$variable)
+
+```
+
+
+
+```{r}
+# Assume rs is your data.table with columns: IDRSSD, price_chg, log_assets, plus 300 others
+
+# Identify the 300 variables (exclude IDRSSD, price_chg, log_assets)
+regressors <- setdiff(names(rs), c("RSSD", "price_chg", "log_assets"))
+
+# Initialize results list
+results <- vector("list", length(regressors))
+
+# Loop over each variable
+for (i in seq_along(regressors)) {
+  var <- regressors[i]
+  
+  # Construct formula
+  fml <- as.formula(paste("price_chg ~ log_assets *", var))
+  
+  # Fit model with complete cases
+  fit <- lm(fml, data = rs)
+  s <- summary(fit)
+  
+  # Extract R² and p-value of the third coefficient (the variable of interest)
+  r2 <- s$r.squared
+  pval <- coef(s)[4, 4]
+  
+  # Store result
+  results[[i]] <- data.frame(
+    variable = var,
+    r_squared = r2,
+    p_value = pval,
+    stringsAsFactors = FALSE
+  )
+}
+
+# Combine into one data.frame
+asset_interaction_results <- do.call(rbind, results)
+asset_interaction_results <- data.table(asset_interaction_results)
+
+select_asset_inter <- paste0(as.vector(asset_interaction_results[r_squared>0.23]$variable),"*log_assets")
+```
+
+
+```{r}
+# Assume rs is your data.table
+# Identify regressors (excluding IDRSSD, price_chg, and log_assets)
+regressors <- setdiff(names(rs), c("IDRSSD", "price_chg", "log_assets"))
+
+# Initialize results list
+results <- vector("list", length(regressors)^2)
+k <- 1  # result index
+
+# Loop over all pairs (i, j)
+pb <- txtProgressBar(min=0,max=length(regressors),style = 3)
+for (i in seq_along(regressors)) {
+  setTxtProgressBar(pb,i)
+  for (j in (i+1):length(regressors)) {
+    var1 <- regressors[i]
+    var2 <- regressors[j]
+
+    # Create interaction term (on the fly)
+    rs[, interaction_term := as.numeric(get(var1)) * as.numeric(get(var2))]
+
+
+    # Fit model
+    fml <- as.formula(paste("price_chg ~ log_assets +interaction_term + ", var1,"+",var2))
+    fit <- lm(fml, data = rs)
+    s <- summary(fit)
+
+    # Extract R² and p-value of the interaction term (2nd coefficient after log_assets)
+    r2 <- s$r.squared
+    pval <- coef(s)[3, 4]
+
+    # Store result
+    results[[k]] <- list(variable1 = var1,
+                         variable2 = var2,
+                         r_squared = r2,
+                         p_value = pval)
+    k <- k + 1
+  }
+}
+
+# Combine results into a data.table
+interaction_results <- rbindlist(results)
+interaction_results <- data.table(interaction_results)
+interaction_results[,interaction:=paste0(variable1,"*",variable2)]
+
+select_inter <- as.vector(interaction_results[r_squared>0.32]$interaction)
+```
+
+
+
+```{r}
+rhs <- c(select_univar,select_asset_inter,select_inter)
+fml <- as.formula(paste0("price_chg~log_assets+",paste(rhs,collapse = "+")))
+reg <- lm(fml,data=rs)
+```
+
+
+
+```{r}
+
+# Assume rs is your data.table and rhs_vars is your character vector of variable names
+# Must also contain 'price_chg' and 'log_assets' in rs
+
+# Initialize
+remaining_vars <- rhs
+full_formula <- as.formula(paste("price_chg ~ log_assets +", paste(remaining_vars, collapse = " + ")))
+full_model <- lm(full_formula, data = rs)
+full_r2 <- summary(full_model)$r.squared
+
+repeat {
+  r2_drop <- sapply(remaining_vars, function(var) {
+    reduced_vars <- setdiff(remaining_vars, var)
+    fml <- as.formula(paste("price_chg ~ log_assets +", paste(reduced_vars, collapse = " + ")))
+    r2 <- summary(lm(fml, data = rs))$r.squared
+    return(full_r2 - r2)
+  })
+
+  min_drop <- min(r2_drop)
+  var_to_drop <- names(r2_drop)[which.min(r2_drop)]
+
+  # Stop if the minimum drop is > 0.01
+  if (min_drop > 0.01) break
+
+  # Drop the variable
+  remaining_vars <- setdiff(remaining_vars, var_to_drop)
+  full_formula <- as.formula(paste("price_chg ~ log_assets +", paste(remaining_vars, collapse = " + ")))
+  full_model <- lm(full_formula, data = rs)
+  full_r2 <- summary(full_model)$r.squared
+
+  cat(sprintf("Dropped %s (ΔR² = %.4f), remaining: %d variables\n", var_to_drop, min_drop, length(remaining_vars)))
+}
+
+# Final model and remaining variables
+final_vars <- remaining_vars
+cat("Final variables retained:", paste(final_vars, collapse = ", "), "\n")
+
+```
+
+```{r}
+fml <- as.formula(paste0("price_chg~log_assets+",paste(final_vars,collapse = "+")))
+reg <- lm(fml,data=rs)
+summary(reg)
+```
+

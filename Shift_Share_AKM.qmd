@@ -1,0 +1,74 @@
+---
+title: "Shift_Share_AKM"
+format: html
+editor: source
+---
+
+
+```{r}
+# Install if needed
+# devtools::install_github("kolesarm/ShiftShareSE")
+
+library(ShiftShareSE)
+library(data.table)
+library(fixest)
+
+# Step 1: Simulate synthetic data
+set.seed(456)
+
+n_regions <- 100  # number of regions
+n_sectors <- 5    # number of sectors
+
+# Generate random sector shocks for instrument (X_s)
+sector_shocks <- rnorm(n_sectors, mean = 0, sd = 1)
+
+# Generate random shares matrix W (rows = regions, columns = sectors)
+shares_mat <- matrix(runif(n_regions * n_sectors, 0, 1), nrow = n_regions, ncol = n_sectors)
+shares_mat <- shares_mat / rowSums(shares_mat)
+colnames(shares_mat) <- paste0("sector", 1:n_sectors)
+
+# Shift-share IV: aggregation of sector shocks
+shift_share_IV <- as.numeric(shares_mat %*% sector_shocks)
+
+# Create endogenous variable: endog_var = gamma * IV + endogenous noise
+gamma_true <- 0.5
+endo_noise <- rnorm(n_regions, mean = 0, sd = 1)
+endog_var <- gamma_true * shift_share_IV + endo_noise
+
+# Create outcome: Y = beta_true * endog_var + random noise
+beta_true <- 2
+outcome_noise <- rnorm(n_regions, mean = 0, sd = 1)
+Y <- beta_true * endog_var + outcome_noise
+
+# Step 2: Assemble data
+dt <- data.table(
+  region_id = 1:n_regions,
+  Y = Y,
+  endog_var = endog_var,
+  shiftshare_IV = shift_share_IV
+)
+
+# Step 3: Run IV regression with shift-share instrument
+# Using ivreg_ss(), per manual
+iv_results <- ivreg_ss(
+  formula = Y ~ 1 | endog_var,   # Outcome ~ controls | endogenous variable
+  X = dt$shiftshare_IV,          # Shift-share instrument
+  data = dt,                     # Data frame
+  W = shares_mat,                # Region-sector shares matrix
+  method = c("ehw", "akm", "akm0") # Standard errors to compute
+)
+
+# Step 4: Print results
+print(iv_results)
+
+```
+```{r}
+fixest_iv_model <- feols(
+  Y ~ 1 | endog_var ~ shiftshare_IV,  # Outcome ~ controls | endogenous ~ instrument
+  data = dt
+)
+
+# Step 2: Print results
+summary(fixest_iv_model)
+```
+
