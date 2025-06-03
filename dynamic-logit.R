@@ -3,11 +3,16 @@ library(fixest)
 library(pROC)
 
 # Function
-dynamic_logit_auc <- function(dt, outcome_var, predictors, fixed_effects, time_var, oos_year, num_prev_years) {
+dynamic_logit_auc <- function(dt, outcome_var, predictors, fixed_effects=NULL, time_var, oos_year, num_prev_years) {
   stopifnot(is.data.table(dt))
   
   # Construct formula
-  rhs <- paste0(paste(predictors, collapse = " + "),"|",paste(fixed_effects, collapse = " + "))
+  if(length(fixed_effects)>0) {
+    rhs <- paste0(paste(predictors, collapse = " + "),"|",paste(fixed_effects, collapse = " + "))
+  } else {
+    rhs <- paste(predictors, collapse = " + ")
+  }
+  
   fml <- as.formula(paste(outcome_var, "~", rhs))
   
   # Train and test sets
