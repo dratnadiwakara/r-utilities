@@ -87,4 +87,45 @@ ggdid(cs_agg) + ggtitle("Event Study: Callaway & Sant’Anna (2021)")
 
 ```
 
+```{r}
+library(data.table)
+library(fixest)
+library(ggplot2)
+
+# Set seed for reproducibility
+set.seed(123)
+
+# Simulate data
+n_groups <- 100
+n_periods <- 20
+N <- n_groups * n_periods
+
+# Panel data structure
+dt <- data.table(
+  id = rep(1:n_groups, each = n_periods),
+  time = rep(1:n_periods, times = n_groups)
+)
+
+# Assign treatment timing: staggered between t = 10 and t = 15
+dt[, treat_time := sample(c(10:15, NA), .N, replace = TRUE), by = id]
+
+# Define treatment indicator
+dt[, treated := !is.na(treat_time)]
+dt[, post_treat := ifelse(!is.na(treat_time) & time >= treat_time, 1, 0)]
+
+# Simulate covariate and outcome
+dt[, x1 := rnorm(.N)]
+dt[, outcome := 0.1 * post_treat + 0.05 * x1 + rnorm(.N)]
+
+# Estimate Sun & Abraham (2021) event study
+model <- feols(
+  outcome ~ x1 + sunab(treat_time, time)|id + time,
+  data = dt
+)
+
+# Plot event-study
+iplot(model, ref.event = -1, main = "Event Study using sunab()")
+
+
+```
 
