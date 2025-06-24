@@ -50,23 +50,43 @@ unzip_all_fast <- function(directory) {
 }
 
 
-delete_all_zip_files <- function(directory) {
-  zip_files <- list.files(path = directory, pattern = "\\.zip$", recursive = TRUE, full.names = TRUE)
+
+delete_files_by_extension <- function(directory,extension) {
+  zip_files <- list.files(path = directory, pattern = paste0("\\.",extension,"$"), recursive = TRUE, full.names = TRUE)
   
   if (length(zip_files) == 0) {
-    message("No .zip files found.")
+    message("No files found.")
     return(invisible(NULL))
   }
   
   deleted <- file.remove(zip_files)
   
   if (all(deleted)) {
-    message(length(zip_files), " .zip files deleted successfully.")
+    message(length(zip_files), "  files deleted successfully.")
   } else {
     warning("Some files could not be deleted:")
     print(zip_files[!deleted])
   }
 }
+
+
+# delete_all_zip_files <- function(directory) {
+#   zip_files <- list.files(path = directory, pattern = "\\.zip$", recursive = TRUE, full.names = TRUE)
+#   
+#   if (length(zip_files) == 0) {
+#     message("No .zip files found.")
+#     return(invisible(NULL))
+#   }
+#   
+#   deleted <- file.remove(zip_files)
+#   
+#   if (all(deleted)) {
+#     message(length(zip_files), " .zip files deleted successfully.")
+#   } else {
+#     warning("Some files could not be deleted:")
+#     print(zip_files[!deleted])
+#   }
+# }
 
 # Usage
 # unzip_all("path/to/your/folder")
