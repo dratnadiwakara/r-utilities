@@ -49,5 +49,24 @@ unzip_all_fast <- function(directory) {
   cat("All zip files extracted using system unzip.\n")
 }
 
+
+delete_all_zip_files <- function(directory) {
+  zip_files <- list.files(path = directory, pattern = "\\.zip$", recursive = TRUE, full.names = TRUE)
+  
+  if (length(zip_files) == 0) {
+    message("No .zip files found.")
+    return(invisible(NULL))
+  }
+  
+  deleted <- file.remove(zip_files)
+  
+  if (all(deleted)) {
+    message(length(zip_files), " .zip files deleted successfully.")
+  } else {
+    warning("Some files could not be deleted:")
+    print(zip_files[!deleted])
+  }
+}
+
 # Usage
 # unzip_all("path/to/your/folder")
