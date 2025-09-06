@@ -1,0 +1,100 @@
+---
+title: "auc_diff"
+format: html
+editor: source
+---
+
+
+```{r}
+# --- Setup ----
+set.seed(0)
+n      <- 500          # per class
+cutoff <- 0.50         # approval threshold
+
+# Labels: 0 = good, 1 = bad
+y <- c(rep(0, n), rep(1, n))
+
+# --- Traditional scores: mild separation (good higher than bad)
+good_trad <- rnorm(n, mean = 0.60, sd = 0.15)
+bad_trad  <- rnorm(n, mean = 0.40, sd = 0.15)
+s_trad    <- pmin(pmax(c(good_trad, bad_trad), 0), 1)
+
+# --- AUC helper
+if (!requireNamespace("pROC", quietly = TRUE)) install.packages("pROC")
+library(pROC)
+auc_val <- function(scores) as.numeric(auc(response = y, predictor = scores))
+auc_trad <- auc_val(s_trad)
+
+# --- Construct Platform: shift some near-cutoff good borrowers up,
+#     lightly nudge a small set of high-score good borrowers down to keep AUC ~same
+near_band <- 0.05          # band around cutoff to target
+k_comp    <- 0.40          # compensation strength on high-score goods
+
+idx_good      <- which(y == 0)
+idx_good_near <- idx_good[abs(s_trad[idx_good] - cutoff) < near_band]
+idx_good_high <- idx_good[s_trad[idx_good] > 0.80]
+
+adjust_auc_equal <- function(eps) {
+  s <- s_trad
+  s[idx_good_near] <- s[idx_good_near] + eps                # push up near-cutoff goods
+  s[idx_good_high] <- s[idx_good_high] - k_comp * eps       # compensate a little
+  s <- pmin(pmax(s, 0), 1)
+  auc_val(s) - auc_trad
+}
+
+# --- Choose epsilon to keep AUC difference tiny but positive (~ +0.003)
+grid  <- seq(0, 0.12, by = 0.001)
+diffs <- sapply(grid, adjust_auc_equal)
+target <- 0.02                                 # aim for +0.003 AUC
+eps_opt <- grid[which.min(abs(diffs - target))]
+
+# Build Platform scores
+s_plat <- s_trad
+s_plat[idx_good_near] <- s_plat[idx_good_near] + eps_opt
+s_plat[idx_good_high] <- s_plat[idx_good_high] - k_comp * eps_opt
+s_plat <- pmin(pmax(s_plat, 0), 1)
+
+auc_plat <- auc_val(s_plat)
+cat(sprintf("AUC (Traditional) = %.4f\nAUC (Platform)   = %.4f\nEpsilon used      = %.3f\n",
+            auc_trad, auc_plat, eps_opt))
+
+# --- Plot panels (density histograms) ---
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+if (!requireNamespace("patchwork", quietly = TRUE)) install.packages("patchwork")
+library(ggplot2); library(patchwork)
+
+df <- data.frame(
+  score = c(s_trad, s_plat),
+  label = factor(rep(y, 2), labels = c("Good", "Bad")),
+  model = factor(rep(c("Traditional", "Platform"), each = length(y)))
+)
+df <- data.table::data.table(df)
+```
+
+```{r}
+ggplot(df[model=="Traditional"],aes(x=score,fill=label))+geom_density(alpha=0.5)
+```
+
+
+```{r}
+ggplot(df[model=="Platform"],aes(x=score,fill=label))+geom_density(alpha=0.5)
+```
+
+
+```{r}
+panel_plot <- function(model_name, auc_val) {
+  ggplot(df[df$model == model_name, ],
+         aes(x = score, fill = label)) +
+    geom_histogram(aes(y = after_stat(density)), bins = 25, alpha = 0.6, position = "identity") +
+    geom_vline(xintercept = cutoff, linetype = "dashed") +
+    coord_cartesian(xlim = c(0, 1)) +
+    labs(title = sprintf("%s Model (AUC ≈ %.2f)", model_name, auc_val),
+         x = "Score", y = "Density", fill = NULL) +
+    theme_minimal(base_size = 12) +
+    theme(legend.position = "bottom")
+}
+
+p1 <- panel_plot("Traditional", auc_trad)
+p2 <- panel_plot("Platform",    auc_plat)
+```
+
