@@ -1,0 +1,227 @@
+---
+title: "CAR-code"
+format: html
+editor: source
+---
+
+
+```{r}
+rm(list=ls())
+library(data.table)
+```
+
+
+```{r}
+# #========================
+# # 3) (Only) WRDS SQL pulls
+# #========================
+# # --- CRSP daily stock returns (dsf): RET as decimal; use permco,permno,date,ret
+# sql_dsf <- sprintf("
+#   SELECT permco, permno, date::date AS date, ret::float8 AS ret
+#   FROM crsp.dsf
+#   WHERE permco IN (%s)
+#     AND date BETWEEN DATE '%s' AND DATE '%s'
+#   ORDER BY permco, date
+# ", permco_csv, format(start_date, "%Y-%m-%d"), format(end_date, "%Y-%m-%d"))
+# 
+# # --- CRSP value-weighted market return (dsi): VWRETD as decimal
+# sql_dsi <- sprintf("
+#   SELECT date::date AS date, vwretd::float8 AS vwretd
+#   FROM crsp.dsi
+#   WHERE date BETWEEN DATE '%s' AND DATE '%s'
+#   ORDER BY date
+# ", format(start_date, "%Y-%m-%d"), format(end_date, "%Y-%m-%d"))
+
+
+SELECT permco, permno, ticker, date
+FROM crsp.msf
+WHERE date BETWEEN DATE '2000-01-01' AND DATE '2025-12-31'
+ORDER BY permno, date;
+
+SELECT gvkey,
+       lpermco AS permco,
+       lpermno AS permno,
+       linkdt,
+       linkenddt
+FROM crsp.ccmxpf_linktable
+WHERE linktype IN ('LU','LC')
+  AND linkprim IN ('C','P')
+  AND usedflag = 1;
+  
+library(data.table)
+library(zoo)          # for as.yearqtr
+  
+
+# --- Clean types
+crsp[, date := as.Date(date)]
+link[, linkdt := as.Date(linkdt)]
+link[, linkenddt := as.Date(linkenddt)]
+
+# Open-ended links: set linkenddt to a far future date for interval-join convenience
+far_future <- as.Date("2099-12-31")
+link[is.na(linkenddt), linkenddt := far_future]
+
+# --- Build an interval join: match crsp row if date in [linkdt, linkenddt]
+# Prepare data for foverlaps(): need start/end columns
+crsp_int <- copy(crsp)[, `:=`(date_start = date, date_end = date)]
+setkey(crsp_int, permno, date_start, date_end)
+
+link_int <- copy(link)[, `:=`(link_start = linkdt, link_end = linkenddt)]
+setkey(link_int, permno, link_start, link_end)
+
+# Interval join on permno & date within [linkdt, linkenddt]
+joined <- foverlaps(
+  x = crsp_int,
+  y = link_int,
+  by.x = c("permno", "date_start", "date_end"),
+  by.y = c("permno", "link_start", "link_end"),
+  type = "within",
+  nomatch = 0L
+)
+
+# Keep relevant columns and make a quarter label
+joined[, quarter := as.yearqtr(date)]
+out <- joined[, .(quarter, ticker, gvkey, permco = i.permco, permno)]
+
+# If multiple tickers map within a quarter (due to changes), pick one rule:
+# e.g., the last observation in that quarter for stability
+out_quarterly <- out[
+  order(permno, quarter, ticker),
+  .SD[.N], by = .(gvkey, permco, permno, quarter)
+]
+
+```
+
+```{r}
+# =========================
+# 1) Synthetic data generator
+# =========================
+set.seed(123)
+
+# Trading calendar (weekdays only)
+start_date <- as.Date("2022-01-01")
+end_date   <- as.Date("2022-12-31")
+cal        <- data.table(date = seq(start_date, end_date, by = "day"))
+cal        <- cal[weekdays(date) %chin% c("Monday","Tuesday","Wednesday","Thursday","Friday")]
+
+# Market process (daily)
+N <- nrow(cal)
+mu_mkt  <- 0.0003                          # market daily drift
+sig_mkt <- 0.01                            # market daily volatility
+cal[, vwretd := rnorm(.N, mu_mkt, sig_mkt)]
+
+# Firms
+n_firms <- 50L
+permcos <- seq(10001L, 10000L + n_firms)
+firm_params <- data.table(
+  permco = permcos,
+  alpha  = rnorm(n_firms, 0.00005, 0.0003),
+  beta   = pmax(0.2, rnorm(n_firms, 1.0, 0.3)),
+  sigma  = runif(n_firms, 0.008, 0.02)
+)
+
+# Expand to panel and simulate returns
+dt <- CJ(permco = permcos, date = cal$date)
+dt <- firm_params[dt, on = "permco"]
+dt <- cal[dt, on = "date"] # adds vwretd
+dt[, ret := alpha + beta*vwretd + rnorm(.N, 0, sigma)]
+setorder(dt, permco, date)
+```
+
+```{r}
+# =========================
+# 2) Synthetic event list
+# =========================
+# One event per firm; avoid edges to ensure room for estimation and event windows
+buffer_days <- 80L
+eligible_dates <- cal$date[buffer_days:(nrow(cal) - buffer_days)]
+events <- data.table(
+  permco     = sample(permcos, n_firms, replace = FALSE),
+  event_date = sample(eligible_dates, n_firms, replace = FALSE)
+)
+
+# Optional: add a small abnormal “shock” on event day to make CAR visible
+shock <- 0.01  # +1% on t=0
+dt[events, on = .(permco, date = event_date), ret := ret + shock]
+
+# =========================
+# 3) Event-time indexing (trading-day t with t=0 on event date)
+# =========================
+dt[, trd_idx := seq_len(.N), by = permco]
+ev_idx <- dt[events, on = .(permco, date = event_date),
+             .(permco, event_date, ev_trd_idx = trd_idx)]
+dt_ev  <- dt[ev_idx, on = .(permco)]
+dt_ev[, t := trd_idx - ev_trd_idx]
+```
+
+
+```{r}
+# =========================
+# 4) AR/CAR computation
+#    Choose: "market_adj" or "market_model"
+# =========================
+ar_model <- "market_model"     # change to "market_adj" if desired
+L_est    <- 120L               # estimation window length (trading days)
+gap_est  <- 20L                # blackout gap
+L_event  <- 2L                 # days before event
+R_event  <- 2L                 # days after event
+
+# Label windows (trading-day indices)
+dt_ev[, wtype :=
+        fifelse(t >= -L_event & t <= R_event, "event",
+        fifelse(t <= -(gap_est + 1L) & t >= -(gap_est + L_est), "est", NA_character_))
+     ]
+
+# Keep only needed rows
+dt_ev <- dt_ev[!is.na(wtype)]
+
+# Compute ARs
+if (ar_model == "market_adj") {
+  ar <- dt_ev[wtype == "event",
+              .(permco, event_date, date, t, ret, vwretd,
+                AR = ret - vwretd)]
+} else {
+  # Market model: ret = alpha + beta*vwretd + eps (estimated on "est" window)
+  ar <- dt_ev[, {
+    est <- .SD[wtype == "est"]
+    ev  <- .SD[wtype == "event"]
+    if (nrow(ev) == 0L) return(NULL)
+    if (nrow(est) >= 50L) {
+      fit <- lm(ret ~ vwretd, data = est)
+      er  <- coef(fit)[1] + coef(fit)[2]*ev$vwretd
+      ev[, AR := ret - as.numeric(er)]
+    } else {
+      ev[, AR := ret - vwretd]  # fallback to market-adjusted
+    }
+    ev[, .(permco, event_date, date, t, ret, vwretd, AR)]
+  }, by = .(permco, event_date)]
+}
+
+# CAR within the event window per event
+setorder(ar, permco, event_date, t)
+ar[, CAR := cumsum(AR), by = .(permco, event_date)]
+```
+
+
+```{r}
+# =========================
+# 5) Aggregates for reporting (CAAR/CACAR)
+# =========================
+# Cross-sectional average AR by event time
+caar <- ar[, .(AAR = mean(AR), CAR_bar = mean(CAR)), by = t]
+
+# Event-level CAR over the full window [−L_event, +R_event]
+car_event <- ar[t == R_event, .(permco, event_date, CAR_window = CAR)]
+
+# Simple t-stats (no clustering; for illustration only)
+caar[, `:=`(
+  n_events = uniqueN(ar[, .(permco, event_date)]),
+  t_AAR    = AAR / (sd(ar$AR) / sqrt(uniqueN(ar[, .(permco, event_date)])))
+)]
+
+# Outputs
+head(ar)         # AR and CAR at each t
+head(caar)       # average AR/CAR by t
+head(car_event)  # end-of-window CAR per event
+```
+
