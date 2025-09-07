@@ -9,6 +9,206 @@ editor: source
 rm(list=ls())
 library(data.table)
 ```
+```{r}
+# ============================================
+# Build: cik, cusip, gvkey, permco, ticker
+# (Optionally quarter-level)
+# ============================================
+
+# Packages
+library(DBI)
+library(RPostgres)
+library(data.table)
+library(zoo)  # for as.yearqtr
+
+# ----------------------------
+# 0) User inputs
+# ----------------------------
+wrds_user   <- Sys.getenv("WRDS_USER")  # set this in your env
+date_start  <- as.Date("2000-01-01")
+date_end    <- as.Date("2025-12-31")
+make_quarter_panel <- TRUE  # set FALSE if you want a flat crosswalk without quarters
+
+# ----------------------------
+# 1) Connect to WRDS
+# ----------------------------
+con <- dbConnect(
+  Postgres(),
+  host   = "wrds-pgdata.wharton.upenn.edu",
+  port   = 9737,
+  dbname = "wrds",
+  sslmode= "require",
+  user   = wrds_user
+)
+on.exit(try(dbDisconnect(con), silent = TRUE))
+
+# ----------------------------
+# 2) Minimal SQL pulls
+# ----------------------------
+
+# (A) CRSP monthly: permno/permco/date (we'll attach ticker/cusip from stocknames by interval)
+sql_msf <- sprintf("
+  SELECT permno, permco, date::date AS date
+  FROM crsp.msf
+  WHERE date BETWEEN DATE '%s' AND DATE '%s'
+  ORDER BY permno, date;
+", format(date_start, "%Y-%m-%d"), format(date_end, "%Y-%m-%d"))
+
+# (B) CRSP stocknames: ticker + (n)cusip + name validity windows
+sql_stocknames <- "
+  SELECT
+    permno,
+    ticker,
+    cusip,
+    ncusip,
+    namedt::date   AS namedt,
+    nameendt::date AS nameendt
+  FROM crsp.stocknames;
+"
+
+# (C) CRSP–Compustat linktable with link dates
+sql_ccm <- "
+  SELECT
+    gvkey,
+    lpermno AS permno,
+    lpermco AS permco,
+    linkdt::date     AS linkdt,
+    linkenddt::date  AS linkenddt
+  FROM crsp.ccmxpf_linktable
+  WHERE linktype IN ('LU','LC')
+    AND linkprim IN ('C','P')
+    AND usedflag = 1;
+"
+
+# (D) Compustat company: CIK
+sql_comp_company <- "
+  SELECT
+    gvkey,
+    cik
+  FROM comp.company;
+"
+
+msf   <- as.data.table(dbGetQuery(con, sql_msf))
+names <- as.data.table(dbGetQuery(con, sql_stocknames))
+ccm   <- as.data.table(dbGetQuery(con, sql_ccm))
+comp  <- as.data.table(dbGetQuery(con, sql_comp_company))
+
+# ----------------------------
+# 3) Clean types + prepare intervals
+# ----------------------------
+msf[, date := as.Date(date)]
+
+names[, `:=`(
+  namedt   = as.Date(namedt),
+  nameendt = as.Date(nameendt)
+)]
+# Open-ended name intervals -> far future
+far_future <- as.Date("2099-12-31")
+names[is.na(nameendt), nameendt := far_future]
+
+ccm[, `:=`(
+  linkdt    = as.Date(linkdt),
+  linkenddt = as.Date(linkenddt)
+)]
+# Open-ended links -> far future
+ccm[is.na(linkenddt), linkenddt := far_future]
+
+# ----------------------------
+# 4) Attach ticker/CUSIP by CRSP name validity (interval join)
+#    msf dates must fall within [namedt, nameendt] for the same permno
+# ----------------------------
+# Prepare msf as point-interval for foverlaps
+msf_int <- copy(msf)[, `:=`(date_start = date, date_end = date)]
+setkey(msf_int, permno, date_start, date_end)
+
+names_int <- copy(names)[, `:=`(name_start = namedt, name_end = nameendt)]
+setkey(names_int, permno, name_start, name_end)
+
+msf_named <- foverlaps(
+  x = msf_int,
+  y = names_int,
+  by.x = c("permno", "date_start", "date_end"),
+  by.y = c("permno", "name_start", "name_end"),
+  type = "within",
+  nomatch = 0L
+)
+
+# Keep the essentials; prefer ncusip when available
+msf_named[, cusip_final := fifelse(!is.na(ncusip) & ncusip != "", ncusip, cusip)]
+msf_named <- msf_named[, .(permno, permco = i.permco, date = date_start,
+                           ticker, cusip = cusip_final)]
+
+# ----------------------------
+# 5) Attach gvkey by link validity (interval join on permno & date ∈ [linkdt, linkenddt])
+# ----------------------------
+ccm_int <- copy(ccm)[, `:=`(link_start = linkdt, link_end = linkenddt)]
+setkey(ccm_int, permno, link_start, link_end)
+
+msf_named_int <- copy(msf_named)[, `:=`(date_start = date, date_end = date)]
+setkey(msf_named_int, permno, date_start, date_end)
+
+joined <- foverlaps(
+  x = msf_named_int,
+  y = ccm_int,
+  by.x = c("permno", "date_start", "date_end"),
+  by.y = c("permno", "link_start", "link_end"),
+  type = "within",
+  nomatch = 0L
+)
+
+# Choose CRSP permco (from msf) as canonical; keep gvkey from linktable
+joined <- joined[, .(
+  date = date_start,
+  permno,
+  permco = i.permco,     # permco from msf (i.* are columns from x in foverlaps)
+  gvkey,
+  ticker = i.ticker,
+  cusip  = i.cusip
+)]
+
+# ----------------------------
+# 6) Add CIK from Compustat
+# ----------------------------
+final_dt <- merge(joined, comp, by = "gvkey", all.x = TRUE)
+
+# Deduplicate per date if multiple rows (rare; keep last deterministically)
+setorder(final_dt, permno, date, ticker, cusip)
+final_dt <- unique(final_dt, by = c("gvkey", "permco", "permno", "date"))
+
+# ----------------------------
+# 7) Optional: quarter-level panel
+# ----------------------------
+if (make_quarter_panel) {
+  final_dt[, quarter := as.yearqtr(date)]
+  # keep one row per (gvkey, permco, permno, quarter); choose the last within-quarter
+  panel_quarter <- final_dt[
+    order(permno, quarter, date),
+    .SD[.N],
+    by = .(gvkey, permco, permno, quarter)
+  ][, .(quarter, cik, cusip, gvkey, permco, ticker, permno)]
+
+  # Show sample
+  print(head(panel_quarter, 10))
+} else {
+  # Flat daily/monthly mapping
+  panel_flat <- final_dt[, .(date, cik, cusip, gvkey, permco, ticker, permno)]
+  print(head(panel_flat, 10))
+}
+
+# ----------------------------
+# 8) Convenience: "current" crosswalk as of a reference date (optional)
+# ----------------------------
+as_of <- as.Date("2025-06-30")
+current_xwalk <- final_dt[date <= as_of][
+  order(permno, date),
+  .SD[.N],
+  by = .(gvkey, permco, permno)
+][, .(as_of, cik, cusip, gvkey, permco, ticker, permno)]
+
+# Display a peek
+print(head(current_xwalk, 10))
+
+```
 
 
 ```{r}
