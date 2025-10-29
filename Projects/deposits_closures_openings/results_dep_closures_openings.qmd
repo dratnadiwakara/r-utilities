@@ -1,0 +1,88 @@
+---
+title: "results_dep_closures_openings"
+format: html
+editor: source
+---
+```{r}
+rm(list=ls())
+library(data.table)
+library(fixest)
+library(DescTools)
+library(dplyr)
+library(ggplot2)
+```
+
+
+```{r}
+call <- readRDS("C:/data/fdic_call_report_2000_2025_assets_deposits.rds")
+call <- call[month(REPDTE)==12]
+call[,YEAR:=year(REPDTE)]
+
+call <- call %>%
+  arrange(RSSDID, YEAR) %>%
+  group_by(RSSDID) %>%
+  mutate(
+    lead_DEPDOM1 = dplyr::lead(DEPDOM, 1),
+    lead_DEPDOM3 = dplyr::lead(DEPDOM, 3),
+    lag_DEPDOM3 = dplyr::lag(DEPDOM, 2),
+    delta_DEPDOM_deposits = (lead_DEPDOM3 - lead_DEPDOM1) / lead_DEPDOM1,
+    delta_DEPDOM_assets = (lead_DEPDOM3 - lead_DEPDOM1) / ASSET
+  ) %>% data.table()
+
+call[,delta_DEPDOM_deposits_w := Winsorize(delta_DEPDOM_deposits, val = quantile(delta_DEPDOM_deposits, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+call[,delta_DEPDOM_assets_w := Winsorize(delta_DEPDOM_assets, val = quantile(delta_DEPDOM_assets, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+```
+
+
+```{r}
+open_close <- readRDS("C:/data/bank_year_panel_branch_dynamics.rds")
+
+df <- merge(open_close,
+            call,
+            by=c("RSSDID","YEAR"))
+
+df2 <- df[frac_closed_last3>0 | frac_opened_last3>0]
+df2[,frac_closed_last3 := Winsorize(frac_closed_last3, val = quantile(frac_closed_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+df2[,frac_opened_last3 := Winsorize(frac_opened_last3, val = quantile(frac_opened_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+```
+
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(delta_DEPDOM_deposits_w~frac_closed_last3+frac_opened_last3|RSSDID+YEAR,data=df)
+r[[2]] <- feols(delta_DEPDOM_deposits_w~frac_closed_last3+frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df)
+r[[3]] <- feols(delta_DEPDOM_deposits_w~frac_closed_last3+frac_opened_last3|RSSDID+YEAR,data=df2)
+r[[4]] <- feols(delta_DEPDOM_deposits_w~frac_closed_last3+frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df2)
+
+etable(r,se.below = T)
+```
+
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3|RSSDID+YEAR,data=df)
+r[[2]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df)
+r[[3]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3|RSSDID+YEAR,data=df2)
+r[[4]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df2)
+
+etable(r,se.below = T)
+```
+
+
+
+# r[[2]] <- feols(log1p(DEPDOM)~frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df)
+# r[[3]] <- feols(log1p(DEPDOM)~frac_closed_last3+log(ASSET)|RSSDID+YEAR,data=df)
+# r[[4]] <- feols(log1p(DEPDOM)~log1p(deps_opened_last3)+log(ASSET)|RSSDID+YEAR,data=df)
+
+etable(r)
+
+ggplot(df[frac_closed_last3>0 | frac_opened_last3>0],aes(x=delta_DEPDOM_w))+geom_histogram()
+
+
+temp <- df[frac_closed_last3>0 | frac_opened_last3>0,.(mean_frac_closed_last3=mean(frac_closed_last3,na.rm=T),
+                                                       mean_frac_opened_last3=mean(frac_opened_last3,na.rm=T)),
+                                                       by=YEAR]
