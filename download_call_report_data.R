@@ -12,7 +12,7 @@ get_financials_quarter <- function(date_str, limit = 10000) {
       req_url_query(
         format    = "json",
         filters   = paste0('REPDTE:"',date_str,'"'),  # quarter-end Call Report date
-        fields    = "RSSDHCR,RSSDID,CERT,REPDTE,ASSET,DEPDOM",  # total assets is ASSET
+        fields    = "RSSDHCR,RSSDID,CERT,REPDTE,ASSET,DEPDOM,DEPFOR, EQTOT,LNLSGR,NIM,EINTEXP,INTINC,NONII,DEPUNA,NETINC",  # total assets is ASSET
         limit     = limit,
         offset    = offset
       )
@@ -49,7 +49,7 @@ all_quarters <- rbindlist(
 )
 
 # Save full panel
-saveRDS(all_quarters, "C:/data/fdic_call_report_2000_2025_assets_deposits.rds")
+saveRDS(all_quarters, "C:/data/fdic_call_report_2000_2025.rds")
 
 # Quick preview
 head(all_quarters)

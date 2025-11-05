@@ -42,13 +42,36 @@ df <- merge(open_close,
             call,
             by=c("RSSDID","YEAR"))
 
-df2 <- df[frac_closed_last3>0 | frac_opened_last3>0]
-df2[,frac_closed_last3 := Winsorize(frac_closed_last3, val = quantile(frac_closed_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
-df2[,frac_opened_last3 := Winsorize(frac_opened_last3, val = quantile(frac_opened_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+# df2 <- df[frac_closed_last3>0 | frac_opened_last3>0]
+df[,frac_closed_last3 := Winsorize(frac_closed_last3, val = quantile(frac_closed_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+df[,frac_opened_last3 := Winsorize(frac_opened_last3, val = quantile(frac_opened_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+df[,share_existing_closed_last3:=Winsorize(share_existing_closed_last3, val = quantile(share_existing_closed_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+df[,share_recent_acq_closed_last3:=Winsorize(share_recent_acq_closed_last3, val = quantile(share_recent_acq_closed_last3, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+df[,closed_last3:=ifelse(frac_closed_last3>0,1,0)]
+df[,opened_last3:=ifelse(frac_opened_last3>0,1,0)]
 
 ```
 
+```{r}
+r <- list()
+r[[1]] <- feols(delta_DEPDOM_deposits_w~closed_last3+opened_last3|RSSDID+YEAR,data=df)
+r[[2]] <- feols(delta_DEPDOM_deposits_w~closed_last3+opened_last3+log(ASSET)|RSSDID+YEAR,data=df)
+r[[3]] <- feols(delta_DEPDOM_deposits_w~closed_last3+opened_last3+log(ASSET)|YEAR,data=df)
+r[[4]] <- feols(delta_DEPDOM_deposits_w~closed_last3+opened_last3|RSSDID+YEAR,data=df2)
+r[[5]] <- feols(delta_DEPDOM_deposits_w~closed_last3+opened_last3+log(ASSET)|RSSDID+YEAR,data=df2)
 
+etable(r,se.below = T)
+```
+
+```{r}
+r <- list()
+r[[1]] <- feols(delta_DEPDOM_deposits_w~share_existing_closed_last3+share_recent_acq_closed_last3+frac_opened_last3|RSSDID+YEAR,data=df)
+r[[2]] <- feols(delta_DEPDOM_deposits_w~share_existing_closed_last3+share_recent_acq_closed_last3+frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df)
+r[[3]] <- feols(delta_DEPDOM_deposits_w~share_existing_closed_last3+share_recent_acq_closed_last3+frac_opened_last3|RSSDID+YEAR,data=df2)
+r[[4]] <- feols(delta_DEPDOM_deposits_w~share_existing_closed_last3+share_recent_acq_closed_last3+frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df2)
+
+etable(r,se.below = T)
+```
 
 ```{r}
 r <- list()
@@ -70,6 +93,28 @@ r[[3]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3|RSSDID
 r[[4]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|RSSDID+YEAR,data=df2)
 
 etable(r,se.below = T)
+```
+
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3|YEAR,data=df,vcov = ~RSSDID)
+r[[2]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|YEAR,data=df,vcov = ~RSSDID)
+r[[3]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3|YEAR,data=df2,vcov = ~RSSDID)
+r[[4]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|YEAR,data=df2,vcov = ~RSSDID)
+
+etable(r,se.below = T)
+```
+
+```{r}
+r <- list()
+r[[1]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|YEAR,data=df2[YEAR %in% 2003:2007],vcov = ~RSSDID)
+r[[2]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|YEAR,data=df2[YEAR %in% 2008:2011],vcov = ~RSSDID)
+r[[3]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|YEAR,data=df2[YEAR %in% 2012:2019],vcov = ~RSSDID)
+r[[4]] <- feols(delta_DEPDOM_assets_w~frac_closed_last3+frac_opened_last3+log(ASSET)|YEAR,data=df2[YEAR %in% 2020:2021],vcov = ~RSSDID)
+
+etable(r,se.below = T,headers = c("2003-2007","2008-2011","2012-2019","2020-2021"))
 ```
 
 

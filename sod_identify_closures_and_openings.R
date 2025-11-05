@@ -10,7 +10,7 @@ branch_year <- readRDS("C:/data/fdic_sod_2000_2025.rds") # sod_download_all_data
 
 
 # Step 1. First and last observed year per bank
-bank_years <- branch_year %>%
+bank_years <- branch_year[DEPSUMBR>0] %>%
   group_by(RSSDID) %>%
   summarize(
     bank_first_year = min(YEAR, na.rm = TRUE),
@@ -88,21 +88,133 @@ closure_opening_data <- branch_year %>%
   ) %>%
   # select columns
   select(
+    RSSDHCR,
     RSSDID,
     UNINUMBR,
     DEPSUMBR,
+    ZIPBR,
     YEAR,
     closed,
     new_branch
   ) %>%
   data.table()
 
+
+# 1. Create lags at the branch level ---------------------------------
+
+closure_opening_data[, `:=`(
+  lag1_bank  = shift(RSSDID, 1L, type = "lag"),   # bank last year
+  lag3_bank  = shift(RSSDID, 3L, type = "lag"),   # bank 3 years ago
+  lag1_bhc   = shift(RSSDHCR, 1L, type = "lag"),  # BHC last year
+  dep_lag1   = shift(DEPSUMBR, 1L, type = "lag"), # deposits t-1
+  dep_lag3   = shift(DEPSUMBR, 3L, type = "lag")  # deposits t-3
+), by = UNINUMBR]
+
+# 2. merged_1_year, merged_2_year, merged_3_year, merged_last_3_yrs ----
+# "merged" means ownership changed vs prior year (RSSDID or BHC changed)
+
+closure_opening_data[
+  ,
+  merged_1_year := as.integer(
+    !is.na(lag1_bank) &
+      (RSSDID != lag1_bank | RSSDHCR != lag1_bhc)
+  )
+]
+
+# merged_2_year is merged_1_year lagged 1 more year within same branch
+# merged_3_year is merged_1_year lagged 2 more years within same branch
+closure_opening_data[
+  ,
+  `:=`(
+    merged_2_year = shift(merged_1_year, 1L, type = "lag"),
+    merged_3_year = shift(merged_1_year, 2L, type = "lag")
+  ),
+  by = UNINUMBR
+]
+
+closure_opening_data[
+  ,
+  merged_last_3_yrs := as.integer(
+    (merged_1_year == 1L) |
+      (merged_2_year == 1L) |
+      (merged_3_year == 1L)
+  )
+]
+
+# 3. deposit_gr_3yrs_branch -------------------------------------------
+# your formula: lag_branch_deposit_amount*100/lag_branch_deposit_amount_3yr
+# That is effectively DEPSUMBR(t-1) / DEPSUMBR(t-3) * 100.
+# If you instead want growth, replace with (dep_lag1 - dep_lag3)/dep_lag3.
+
+closure_opening_data[
+  ,
+  deposit_gr_3yrs_branch := fifelse(
+    !is.na(dep_lag1) & !is.na(dep_lag3) & dep_lag3 != 0,
+    dep_lag1 * 100 / dep_lag3,
+    NA_real_
+  )
+]
+
+# 4. legacy_branch -----------------------------------------------------
+# legacy_branch = 1 if same bank has owned this same branch for >=3 years
+# i.e. bank 3 years ago equals current bank
+
+closure_opening_data[
+  ,
+  legacy_branch := as.integer(
+    !is.na(lag3_bank) & lag3_bank == RSSDID
+  )
+]
+
+# 5. same_zip_prior_branches ------------------------------------------
+# Logic: for branches that were "merged" (i.e. newly acquired),
+# check if, in the prior 1-3 years, the same bank already had
+# another branch in the same ZIPBR.
+
+closure_opening_data[, same_zip_prior_branches := 0L]
+
+merged_rows <- which(closure_opening_data$merged_1_year == 1L)
+pb <- txtProgressBar(min = 0, max = length(merged_rows), style = 3, width = 50)
+count=0
+for (i in merged_rows) {
+  count = count+1
+  setTxtProgressBar(pb, count)
+  temp <- closure_opening_data[
+    YEAR <= (closure_opening_data[i, YEAR] - 1L) &
+      YEAR >= (closure_opening_data[i, YEAR] - 3L) &
+      ZIPBR ==  closure_opening_data[i, ZIPBR] &
+      RSSDID == closure_opening_data[i, RSSDID] &
+      UNINUMBR != closure_opening_data[i, UNINUMBR]
+  ]
+  
+  if (nrow(temp) > 0L) {
+    closure_opening_data[i, same_zip_prior_branches := 1L]
+  }
+}
+
+# 6. closed_old_branch and closed_acq_branch ---------------------------
+# closed_old_branch = 1 if branch closed and it's a long-held (legacy) branch
+# closed_acq_branch = 1 if branch closed and it's NOT legacy
+
+closure_opening_data[
+  ,
+  `:=`(
+    closed_old_branch = as.integer(closed == 1L & legacy_branch == 1L),
+    closed_acq_branch = as.integer(closed == 1L & merged_last_3_yrs == 1L)
+  )
+]
+
+# 7. Drop helper columns you do not want to keep -----------------------
+closure_opening_data[, c("lag1_bank","lag3_bank","lag1_bhc","dep_lag1","dep_lag3",
+                         "merged_2_year","merged_3_year") := NULL]
+
+
 saveRDS(closure_opening_data,'C:/data/closure_opening_data.rds')
 
 
-temp <- closure_opening_data[,.(closed_frac=mean(closed,na.rm=T),
-                        new_frac = mean(new_branch,na.rm=T)),
-                     by=YEAR]
-ggplot(temp[YEAR<2025],aes(x=YEAR,y=closed_frac))+geom_line()
-ggplot(temp[YEAR>2000],aes(x=YEAR,y=new_frac))+geom_line()
+# temp <- closure_opening_data[,.(closed_frac=mean(closed,na.rm=T),
+#                         new_frac = mean(new_branch,na.rm=T)),
+#                      by=YEAR]
+# ggplot(temp[YEAR<2025],aes(x=YEAR,y=closed_frac))+geom_line()
+# ggplot(temp[YEAR>2000],aes(x=YEAR,y=new_frac))+geom_line()
 
