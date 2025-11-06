@@ -12,7 +12,7 @@ get_financials_quarter <- function(date_str, limit = 10000) {
       req_url_query(
         format    = "json",
         filters   = paste0('REPDTE:"',date_str,'"'),  # quarter-end Call Report date
-        fields    = "RSSDHCR,RSSDID,CERT,REPDTE,ASSET,DEPDOM,DEPFOR, EQTOT,LNLSGR,NIM,EINTEXP,INTINC,NONII,DEPUNA,NETINC",  # total assets is ASSET
+        fields    = "RSSDHCR,RSSDID,CERT,REPDTE,ASSET,DEPDOM,DEPFOR,EQ2, EQ,LNLSGR,NIM,EINTEXP,INTINC,NONII,DEPUNA,NETINC",  # total assets is ASSET
         limit     = limit,
         offset    = offset
       )
@@ -36,7 +36,7 @@ years <- 2000:2025
 
 # Generate quarter-end dates explicitly
 quarters <- as.Date(c(
-  outer(years, c("-03-31", "-06-30", "-09-30", "-12-31"), paste0)
+  outer(years, c( "-12-31"), paste0) #"-03-31", "-06-30", "-09-30",
 ))
 quarters_fmt <- format(quarters, "%Y%m%d")
 quarters_fmt <- quarters_fmt[order(quarters_fmt)]
