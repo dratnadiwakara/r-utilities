@@ -208,6 +208,117 @@ closure_opening_data[
 closure_opening_data[, c("lag1_bank","lag3_bank","lag1_bhc","dep_lag1","dep_lag3",
                          "merged_2_year","merged_3_year") := NULL]
 
+# 8. Zip code level characteristics -----------------------
+
+library(readxl)
+library(stringr)
+
+acs_data <- readRDS("C:/data/acs_data_2010_2022_tract.rds")
+
+tract_zip_crosswalk <- read_excel('C:/data/ZIP_TRACT_122019.xlsx')
+tract_zip_crosswalk <- data.table(tract_zip_crosswalk)
+tract_zip_crosswalk[,zip:=str_pad(ZIP,5,"left","0")]
+tract_zip_crosswalk[,tract:=as.character(TRACT)]
+tract_zip_crosswalk[,tract:=str_pad(tract,11,"left","0")]
+tract_zip_crosswalk[,tot_ratio:=TOT_RATIO]
+
+
+acs_with_zip <- acs_data %>%
+  left_join(tract_zip_crosswalk[,c("zip","tract","tot_ratio")], by = c("tract" = "tract"))
+
+
+
+zip_aggregated_data <- acs_with_zip %>%
+  group_by(zip,yr) %>%
+  summarize(
+    # Weighted average of median income
+    median_income = sum(median_income * tot_ratio, na.rm = T) ,
+    
+    # Weighted average of percentage of population with a bachelor's degree
+    pct_college_educated = sum(pct_college_educated * tot_ratio, na.rm=T),
+    
+    # Weighted average of white population percentage
+    # white_population_pct = sum(white_populationE * RES_RATIO,na.rm=T),
+    
+    # Weighted average of median age
+    median_age = sum(median_age * tot_ratio,na.rm = T)
+    
+    # Total population is weighted by RES_RATIO
+    # total_population = sum(total_populationE * RES_RATIO)
+  )
+
+zip_aggregated_data <- data.table(zip_aggregated_data)
+
+irs_data <- readRDS("C:/data/irs_data_2010_2022_zip.rds")
+
+
+irs_data <- irs_data[,c("zipcode","yr","dividend_frac","capital_gain_frac")]
+irs_data[,zipcode:=str_pad(zipcode,5,"left","0")]
+# 
+zip_demo_data <- merge(zip_aggregated_data,irs_data,by.x=c("zip","yr"),by.y=c("zipcode","yr"),all.x=T)
+
+
+key_chars <- c("median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac")
+
+zip_demo_data <- data.table(zip_demo_data)
+zip_demo_data[,paste0(key_chars,"_q"):=lapply(.SD, function(x) ntile(x,2)),by=yr,.SDcols = key_chars]
+
+zip_demo_data[,sophisticated_ed_sm:=ifelse(!is.na(dividend_frac)  & pct_college_educated_q==2 & (dividend_frac_q==2 | capital_gain_frac_q==2),1,
+                                           ifelse(!is.na(dividend_frac),0,NA))]
+
+
+zip_demo_data <- zip_demo_data[,c("zip","yr","median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac","sophisticated_ed_sm")]
+
+zip_demo_data[,age_bin:=ntile(median_age,4),by=yr]
+
+temp1 <- zip_demo_data[yr==2010]
+for(y in 2000:2009) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2022]
+for(y in 2023:2024) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2010]
+for(y in 2011:2012) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2013]
+for(y in 2014:2015) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2019]
+for(y in 2020:2021) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+closure_opening_data <- merge(closure_opening_data,
+                              zip_demo_data[!is.na(zip),.(zip,yr,sophisticated_ed_sm)],
+                              by.x=c("ZIPBR","YEAR"),
+                              by.y=c("zip","yr"),
+                              all.x=T)
+
+closure_opening_data[
+  ,
+  `:=`(
+    closed_sophisticated_branch = as.integer(closed == 1L & sophisticated_ed_sm == 1L)
+  )
+]
+
 
 saveRDS(closure_opening_data,'C:/data/closure_opening_data.rds')
 

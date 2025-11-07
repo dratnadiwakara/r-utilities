@@ -17,7 +17,8 @@ bank_year_summary <- closure_opening_data[
     deps_opened_t  = sum(DEPSUMBR[new_branch == 1], na.rm = TRUE),
     # New: counts by closure type
     old_closed_t   = sum(closed_old_branch == 1, na.rm = TRUE),
-    acq_closed_t   = sum(closed_acq_branch == 1, na.rm = TRUE)
+    acq_closed_t   = sum(closed_acq_branch == 1, na.rm = TRUE),
+    sophisticated_closed_t = sum(closed_sophisticated_branch==1,na.rm=T)
   ),
   by = .(RSSDID, YEAR)
 ]
@@ -47,7 +48,10 @@ bank_year_summary[
     old_closed_lag3    = shift(old_closed_t,  3, type = "lag"),
     acq_closed_lag1    = shift(acq_closed_t,  1, type = "lag"),
     acq_closed_lag2    = shift(acq_closed_t,  2, type = "lag"),
-    acq_closed_lag3    = shift(acq_closed_t,  3, type = "lag")
+    acq_closed_lag3    = shift(acq_closed_t,  3, type = "lag"),
+    sophisticated_closed_lag1    = shift(sophisticated_closed_t,  1, type = "lag"),
+    sophisticated_closed_lag2    = shift(sophisticated_closed_t,  2, type = "lag"),
+    sophisticated_closed_lag3    = shift(sophisticated_closed_t,  3, type = "lag")
   ),
   by = RSSDID
 ]
@@ -78,7 +82,10 @@ bank_year_summary[
                                        old_closed_lag3), na.rm = TRUE),
     acq_closed_last3   = rowSums(cbind(acq_closed_lag1,
                                        acq_closed_lag2,
-                                       acq_closed_lag3), na.rm = TRUE)
+                                       acq_closed_lag3), na.rm = TRUE),
+    sophisticated_closed_last3   = rowSums(cbind(sophisticated_closed_lag1,
+                                       sophisticated_closed_lag1,
+                                       sophisticated_closed_lag1), na.rm = TRUE)
   )
 ]
 
@@ -100,9 +107,14 @@ bank_year_summary[
     share_existing_closed_last3 = fifelse(num_branches_lag3 > 0,
                                           old_closed_last3 / num_branches_lag3, NA_real_),
     share_recent_acq_closed_last3 = fifelse(num_branches_lag3 > 0,
-                                            acq_closed_last3 / num_branches_lag3, NA_real_)
+                                            acq_closed_last3 / num_branches_lag3, NA_real_),
+    share_sophisticated_closed_last3 = fifelse(num_branches_lag3 > 0,
+                                               sophisticated_closed_last3 / num_branches_lag3, NA_real_)
   )
 ]
+
+bank_year_summary[,share_non_sophisiticated_closed_last3:=frac_closed_last3-share_sophisticated_closed_last3]
+
 
 # 5. Final bank-year panel
 bank_year_panel <- bank_year_summary[
@@ -118,7 +130,9 @@ bank_year_panel <- bank_year_summary[
     share_recent_acq_closed_last3,
     # Keep deposit sums if needed downstream
     deps_closed_last3,
-    deps_opened_last3
+    deps_opened_last3,
+    share_sophisticated_closed_last3,
+    share_non_sophisiticated_closed_last3
   )
 ]
 
