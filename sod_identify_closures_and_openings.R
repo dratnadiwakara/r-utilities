@@ -93,6 +93,7 @@ closure_opening_data <- branch_year %>%
     UNINUMBR,
     DEPSUMBR,
     ZIPBR,
+    STCNTY,
     YEAR,
     closed,
     new_branch
@@ -186,7 +187,7 @@ for (i in merged_rows) {
       RSSDID == closure_opening_data[i, RSSDID] &
       UNINUMBR != closure_opening_data[i, UNINUMBR]
   ]
-  
+
   if (nrow(temp) > 0L) {
     closure_opening_data[i, same_zip_prior_branches := 1L]
   }
