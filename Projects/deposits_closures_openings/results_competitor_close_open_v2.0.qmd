@@ -1,0 +1,415 @@
+---
+title: "Preliminary Results - 11/15/2025"
+format:
+  html:
+    page-layout: full
+    # optional: keep text from getting too wide
+    # css: styles.css
+    code-overflow: scroll
+    number-sections: true
+    self-contained: true
+editor: source
+execute: 
+  warning: false
+  echo: false
+---
+
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(fixest)
+library(DescTools)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(readxl)
+library(stringr)
+
+source('https://raw.githubusercontent.com/dratnadiwakara/r-utilities/refs/heads/main/summary_stat_tables.R')
+```
+
+
+```{r}
+dt <- readRDS("C:/data/branch_competition_panel.rds")
+setDT(dt)
+
+
+
+# Ensure sophistication is 0/1 (drop NAs or keep with 0/1+NA dummies)
+dt <- dt[!is.na(sophisticated_ed_sm)]
+dt[, sophisticated_ed_sm := as.integer(sophisticated_ed_sm == 1L)]
+
+setorder(dt,UNINUMBR,YEAR)
+dt[, close_flag := own_closures_zip]
+dt[, open_flag := own_openings_zip]
+
+# 2) Previous 1–3 and next 1–3 years (by row within bank–ZIP)
+dt[, `:=`(
+  close_l1 = shift(close_flag, 1, type = "lag"),
+  close_l2 = shift(close_flag, 2, type = "lag"),
+  close_l3 = shift(close_flag, 3, type = "lag"),
+  close_f1 = shift(close_flag, 1, type = "lead"),
+  close_f2 = shift(close_flag, 2, type = "lead"),
+  close_f3 = shift(close_flag, 3, type = "lead"),
+  open_l1 = shift(open_flag, 1, type = "lag"),
+  open_l2 = shift(open_flag, 2, type = "lag"),
+  open_l3 = shift(open_flag, 3, type = "lag"),
+  open_f1 = shift(open_flag, 1, type = "lead"),
+  open_f2 = shift(open_flag, 2, type = "lead"),
+  open_f3 = shift(open_flag, 3, type = "lead")
+), by = .(UNINUMBR)]
+
+
+dt[,competitor_closures_rate:=Winsorize(competitor_closures_rate, val = quantile(competitor_closures_rate, probs = c(0.01, 0.99), na.rm = T))]
+dt[,competitor_close_dep_share_prev:=Winsorize(competitor_close_dep_share_prev, val = quantile(competitor_close_dep_share_prev, probs = c(0.01, 0.99), na.rm = T))]
+dt[,competitor_openings_rate:=Winsorize(competitor_openings_rate, val = quantile(competitor_openings_rate, probs = c(0.01, 0.99), na.rm = T))]
+
+dt[,zip_yr:=paste(ZIPBR,YEAR)]
+
+dt[,county:=str_pad(STCNTY,5,"left","0")]
+dt[,county_yr:=paste(county,YEAR)]
+dt[,bank_yr:=paste(RSSDID,YEAR)]
+
+
+
+dt_sub_2_3yr <- dt[own_closures_zip == 0 & close_l1==0 & close_l2==0 & close_l3==0 &
+             own_openings_zip == 0 & open_l1==0 & open_l2==0 & open_l3==0  &
+               dep_gr_3yr < 1 & is.finite(dep_gr_3yr)]
+
+dt_sub_2_1yr <- dt[own_closures_zip == 0 & close_l1==0 & close_l2==0 & close_l3==0 &
+             own_openings_zip == 0 & open_l1==0 & open_l2==0 & open_l3==0  &
+               dep_gr_1yr < 1 & is.finite(dep_gr_1yr)]
+
+dt_sub_1_3yr <- dt[own_closures_zip == 0 & own_openings_zip == 0 & dep_gr_3yr < 1 & is.finite(dep_gr_3yr)]
+
+dt_sub_1_1yr <- dt[own_closures_zip == 0 & own_openings_zip == 0 & dep_gr_1yr < 1 & is.finite(dep_gr_1yr)]
+
+
+gc()
+```
+
+
+# Descriptive Stats
+
+## Dependent Variable: (Deposits$_{t+3}$ - Deposits$_{t}$)/Assets$_t$
+
+```{r}
+ggplot(dt_sub_1_3yr[YEAR>2001 & YEAR<2022],aes(x=dep_gr_3yr))+geom_histogram()+facet_wrap(~YEAR)
+```
+
+## Dependent Variable: (Deposits$_{t+1}$ - Deposits$_{t}$)/Assets$_t$
+
+```{r}
+ggplot(dt_sub_1_1yr[YEAR>2001 & YEAR<2022],aes(x=dep_gr_1yr))+geom_histogram()+facet_wrap(~YEAR)
+```
+
+
+## Key RHS Variables 
+
+```{r}
+g1 <- ggplot(dt_sub_1_1yr,aes(x=competitor_closures_rate))+geom_histogram()+ggtitle("competitor_closures_rate")
+g2 <- ggplot(dt_sub_1_1yr,aes(x=competitor_openings_rate))+geom_histogram()+ggtitle("competitor_openings_rate")
+grid.arrange(g1,g2,nrow=1)
+```
+
+
+```{r}
+setFixest_fml(
+  ..fixef     = ~ UNINUMBR + county_yr,
+  ..fixef2    = ~ county_yr + bank_yr,
+  ..vcov      = ~ UNINUMBR,
+  ..fml_baseline = ~competitor_closures_rate + competitor_openings_rate + log1p(DEPSUMBR) ,
+  ..fml_baseline2 = ~competitor_close_dep_share_prev+ + competitor_openings_rate + log1p(DEPSUMBR),
+  ..fml_interaction = ~competitor_closures_rate*sophisticated_ed_sm + competitor_openings_rate*sophisticated_ed_sm + log1p(DEPSUMBR),
+  ..fml_interaction2 = ~competitor_close_dep_share_prev*sophisticated_ed_sm + competitor_openings_rate*sophisticated_ed_sm + log1p(DEPSUMBR)
+)
+
+sub_use <- dt$own_closures_zip == 0 & dt$own_openings_zip == 0 & dt$dep_gr < 1
+
+
+
+dict <- c(
+  dep_gr_3yr                        = "Dep gr(t to t+3)",
+  dep_gr_1yr                        = "Dep gr(t to t+1)",
+  competitor_closures_rate      = "Competitor closure no share (ZIP, rate)",
+  competitor_openings_rate      = "Competitor openings no share (ZIP, rate)",
+  competitor_close_dep_share_prev = "Competitor closure deposit share (t−1)",
+  sophisticated_ed_sm           = "Sophisticated ZIP",
+  "log1p(DEPSUMBR)"                = "Log(1 + Deposits)"
+)
+
+
+setFixest_etable(
+  dict        = dict,
+  se.below    = TRUE
+)
+```
+
+# Main Result Version 01
+
+Restrict branch-years to branches that had no openings or closures in the current year
+
+
+## LHS: t to t+3
+
+### branch + county_yr FE
+
+```{r}
+est1 <- feols(
+  dep_gr_3yr ~ ..fml_baseline|..fixef,
+  data = dt_sub_1_3yr
+
+)
+
+est2 <- feols(
+  dep_gr_3yr ~ ..fml_baseline2|..fixef,
+  data = dt_sub_1_3yr
+)
+
+est3 <- feols(
+  dep_gr_3yr ~ ..fml_interaction|..fixef,
+  data = dt_sub_1_3yr
+)
+
+est4 <- feols(
+  dep_gr_3yr ~ ..fml_interaction2|..fixef,
+  data = dt_sub_1_3yr
+)
+
+md_table(etable(est1,est2,est3,est4,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
+### bank_yr + county_yr FE
+
+```{r}
+est1 <- feols(
+  dep_gr_3yr ~ ..fml_baseline|..fixef2,
+  data = dt_sub_1_3yr,
+  vcov = ~UNINUMBR
+
+)
+
+est2 <- feols(
+  dep_gr_3yr ~ ..fml_baseline2|..fixef2,
+  data = dt_sub_1_3yr,
+  vcov = ~UNINUMBR
+)
+
+est3 <- feols(
+  dep_gr_3yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_1_3yr,
+  vcov = ~UNINUMBR
+)
+
+est4 <- feols(
+  dep_gr_3yr ~ ..fml_interaction2|..fixef2,
+  data = dt_sub_1_3yr,
+  vcov = ~UNINUMBR
+)
+
+md_table(etable(est1,est2,est3,est4,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
+
+
+## LHS: t to t+1 <b>All following regressions use this as LHS</b>
+
+
+### branch + county_yr FE
+```{r}
+est1 <- feols(
+  dep_gr_1yr ~ ..fml_baseline|..fixef,
+  data = dt_sub_1_1yr
+
+)
+
+est2 <- feols(
+  dep_gr_1yr ~ ..fml_baseline2|..fixef,
+  data = dt_sub_1_1yr
+)
+
+est3 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef,
+  data = dt_sub_1_1yr
+)
+
+est4 <- feols(
+  dep_gr_1yr ~ ..fml_interaction2|..fixef,
+  data = dt_sub_1_1yr
+)
+
+md_table(etable(est1,est2,est3,est4,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
+
+### bank_yr + county_yr FE
+```{r}
+est1 <- feols(
+  dep_gr_1yr ~ ..fml_baseline|..fixef2,
+  data = dt_sub_1_1yr,
+  vcov = ~UNINUMBR
+
+)
+
+est2 <- feols(
+  dep_gr_1yr ~ ..fml_baseline2|..fixef2,
+  data = dt_sub_1_1yr,
+  vcov = ~UNINUMBR
+)
+
+est3 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_1_1yr,
+  vcov = ~UNINUMBR
+)
+
+est4 <- feols(
+  dep_gr_1yr ~ ..fml_interaction2|..fixef2,
+  data = dt_sub_1_1yr,
+  vcov = ~UNINUMBR
+)
+
+md_table(etable(est1,est2,est3,est4,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
+
+# Main Result Version 02
+
+Restrict branch-years to branches that had no openings or closures in the current year, <b> and previous three years</b>
+
+
+## branch + county_yr FE
+```{r}
+est1 <- feols(
+  dep_gr_1yr ~ ..fml_baseline|..fixef,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+
+)
+
+est2 <- feols(
+  dep_gr_1yr ~ ..fml_baseline2|..fixef,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+)
+
+est3 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+)
+
+est4 <- feols(
+  dep_gr_1yr ~ ..fml_interaction2|..fixef,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+)
+
+md_table(etable(est1,est2,est3,est4,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
+### bank_yr + county_yr FE
+```{r}
+est1 <- feols(
+  dep_gr_1yr ~ ..fml_baseline|..fixef2,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+
+)
+
+est2 <- feols(
+  dep_gr_1yr ~ ..fml_baseline2|..fixef2,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+)
+
+est3 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+)
+
+est4 <- feols(
+  dep_gr_1yr ~ ..fml_interaction2|..fixef2,
+  data = dt_sub_2_1yr,
+  vcov = ~UNINUMBR
+)
+
+md_table(etable(est1,est2,est3,est4,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
+
+# By Time Version 01
+
+Restrict branch-years to branches that had no openings or closures in the current year
+
+```{r}
+est1 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_1_1yr[YEAR %in% 2003:2007],
+  vcov = ~UNINUMBR
+)
+
+est2 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_1_1yr[YEAR %in% 2008:2011],
+  vcov = ~UNINUMBR
+)
+
+est3 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_1_1yr[YEAR %in% 2012:2019],
+  vcov = ~UNINUMBR
+)
+
+est4 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_1_1yr[YEAR %in% 2020:2021],
+  vcov = ~UNINUMBR
+)
+
+md_table(
+  etable(est1,est2,est3,est4,
+       headers= c("2003:2007","2008:2011","2012:2019","2020:2021"),
+      signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10))
+)
+```
+
+
+
+# By Time Version 02
+
+Restrict branch-years to branches that had no openings or closures in the current year, <b> and previous three years</b>
+
+```{r}
+est1 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_2_1yr[YEAR %in% 2003:2007],
+  vcov = ~UNINUMBR
+)
+
+est2 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_2_1yr[YEAR %in% 2008:2011],
+  vcov = ~UNINUMBR
+)
+
+est3 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_2_1yr[YEAR %in% 2012:2019],
+  vcov = ~UNINUMBR
+)
+
+est4 <- feols(
+  dep_gr_1yr ~ ..fml_interaction|..fixef2,
+  data = dt_sub_2_1yr[YEAR %in% 2020:2021],
+  vcov = ~UNINUMBR
+)
+
+md_table(
+  etable(est1,est2,est3,est4,
+       headers= c("2003:2007","2008:2011","2012:2019","2020:2021"),
+      signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10))
+)
+```

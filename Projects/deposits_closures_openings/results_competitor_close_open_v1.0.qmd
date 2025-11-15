@@ -161,7 +161,7 @@ md_table(etable(est1,est2,est3,est4,signif.code =  c("***"=0.01, "**"=0.05, "*"=
 
 
 
-# Main Result Version 012
+# Main Result Version 02
 
 Restrict branch-years to branches that had no openings or closures in the current year, <b> next three years, and previous three years</b>
 

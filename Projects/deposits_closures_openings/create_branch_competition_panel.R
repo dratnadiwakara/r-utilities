@@ -29,14 +29,16 @@ setorder(closure_opening_data, UNINUMBR, YEAR)
 closure_opening_data[
   , `:=`(
     year_lead3 = shift(YEAR, 3L, type = "lead"),
-    dep_lead3  = shift(DEPSUMBR, 3L, type = "lead")
+    year_lead1 = shift(YEAR, 1L, type = "lead"),
+    dep_lead3  = shift(DEPSUMBR, 3L, type = "lead"),
+    dep_lead1  = shift(DEPSUMBR, 1L, type = "lead")
   ),
   by = UNINUMBR
 ]
 
 closure_opening_data[
   ,
-  dep_gr := fifelse(
+  dep_gr_3yr := fifelse(
     !is.na(dep_lead3) & !is.na(DEPSUMBR) & DEPSUMBR > 0 &
       year_lead3 == YEAR + 3L,
     (dep_lead3 - DEPSUMBR) / DEPSUMBR,
@@ -45,11 +47,25 @@ closure_opening_data[
 ]
 
 
-# Winsorize dep_gr at 1st/99th percentiles
 closure_opening_data[
-  , dep_gr := Winsorize(dep_gr, val = quantile(dep_gr, probs = c(0.01, 0.99), na.rm = T))
+  ,
+  dep_gr_1yr := fifelse(
+    !is.na(dep_lead1) & !is.na(DEPSUMBR) & DEPSUMBR > 0 &
+      year_lead1 == YEAR + 1L,
+    (dep_lead1 - DEPSUMBR) / DEPSUMBR,
+    NA_real_
+  )
 ]
 
+
+# Winsorize dep_gr_3yr at 1st/99th percentiles
+closure_opening_data[
+  , dep_gr_3yr := Winsorize(dep_gr_3yr, val = quantile(dep_gr_3yr, probs = c(0.01, 0.99), na.rm = T))
+]
+
+closure_opening_data[
+  , dep_gr_1yr := Winsorize(dep_gr_1yr, val = quantile(dep_gr_1yr, probs = c(0.01, 0.99), na.rm = T))
+]
 
 # ---------------------------------------------------------------------
 # 3. Summarize branch openings and closures by bank-ZIP-year
