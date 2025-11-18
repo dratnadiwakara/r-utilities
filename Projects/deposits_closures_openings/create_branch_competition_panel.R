@@ -13,12 +13,12 @@ library(DescTools)
 # ---------------------------------------------------------------------
 # 1. Load the base branch-year data
 # ---------------------------------------------------------------------
-closure_opening_data <- readRDS("C:/data/closure_opening_data.rds")
+closure_opening_data <- readRDS("C:/data/closure_opening_data_simple.rds")
 
 # Keep relevant columns
 closure_opening_data <- closure_opening_data[
   , .(RSSDID, UNINUMBR, ZIPBR, YEAR, DEPSUMBR,STCNTY,
-      closed, new_branch, sophisticated_ed_sm)
+      closed, new_branch)
 ]
 
 # ---------------------------------------------------------------------

@@ -172,26 +172,26 @@ closure_opening_data[
 # check if, in the prior 1-3 years, the same bank already had
 # another branch in the same ZIPBR.
 
-closure_opening_data[, same_zip_prior_branches := 0L]
-
-merged_rows <- which(closure_opening_data$merged_1_year == 1L)
-pb <- txtProgressBar(min = 0, max = length(merged_rows), style = 3, width = 50)
-count=0
-for (i in merged_rows) {
-  count = count+1
-  setTxtProgressBar(pb, count)
-  temp <- closure_opening_data[
-    YEAR <= (closure_opening_data[i, YEAR] - 1L) &
-      YEAR >= (closure_opening_data[i, YEAR] - 3L) &
-      ZIPBR ==  closure_opening_data[i, ZIPBR] &
-      RSSDID == closure_opening_data[i, RSSDID] &
-      UNINUMBR != closure_opening_data[i, UNINUMBR]
-  ]
-
-  if (nrow(temp) > 0L) {
-    closure_opening_data[i, same_zip_prior_branches := 1L]
-  }
-}
+# closure_opening_data[, same_zip_prior_branches := 0L]
+# 
+# merged_rows <- which(closure_opening_data$merged_1_year == 1L)
+# pb <- txtProgressBar(min = 0, max = length(merged_rows), style = 3, width = 50)
+# count=0
+# for (i in merged_rows) {
+#   count = count+1
+#   setTxtProgressBar(pb, count)
+#   temp <- closure_opening_data[
+#     YEAR <= (closure_opening_data[i, YEAR] - 1L) &
+#       YEAR >= (closure_opening_data[i, YEAR] - 3L) &
+#       ZIPBR ==  closure_opening_data[i, ZIPBR] &
+#       RSSDID == closure_opening_data[i, RSSDID] &
+#       UNINUMBR != closure_opening_data[i, UNINUMBR]
+#   ]
+# 
+#   if (nrow(temp) > 0L) {
+#     closure_opening_data[i, same_zip_prior_branches := 1L]
+#   }
+# }
 
 # 6. closed_old_branch and closed_acq_branch ---------------------------
 # closed_old_branch = 1 if branch closed and it's a long-held (legacy) branch
