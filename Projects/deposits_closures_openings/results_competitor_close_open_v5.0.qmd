@@ -1,11 +1,12 @@
 ---
-title: "Results - 11/18/2025"
+title: "Results - 11/19/2025"
 format:
   html:
     page-layout: full
     # optional: keep text from getting too wide
     # css: styles.css
     code-overflow: scroll
+    code-fold: true
     number-sections: true
     self-contained: true
 editor: source
@@ -31,7 +32,7 @@ source('https://raw.githubusercontent.com/dratnadiwakara/r-utilities/refs/heads/
 
 
 ```{r}
-dt <- readRDS("C:/data/branch_competition_panel.rds")
+dt <- readRDS("C:/data/branch_competition_panel_with_apps.rds")
 setDT(dt)
 
 
@@ -61,9 +62,15 @@ dt[, `:=`(
 ), by = .(UNINUMBR)]
 
 
-dt[,competitor_closures_rate:=Winsorize(competitor_closures_rate, val = quantile(competitor_closures_rate, probs = c(0.01, 0.99), na.rm = T))]
-dt[,competitor_close_dep_share_prev:=Winsorize(competitor_close_dep_share_prev, val = quantile(competitor_close_dep_share_prev, probs = c(0.01, 0.99), na.rm = T))]
-dt[,competitor_openings_rate:=Winsorize(competitor_openings_rate, val = quantile(competitor_openings_rate, probs = c(0.01, 0.99), na.rm = T))]
+dt[,competitor_closures_rate:=Winsorize(competitor_closures_rate, val = quantile(competitor_closures_rate, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,competitor_closures_rate_app:=Winsorize(competitor_closures_rate_app, val = quantile(competitor_closures_rate_app, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,competitor_closures_rate_noapp:=Winsorize(competitor_closures_rate_noapp, val = quantile(competitor_closures_rate_noapp, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+dt[,competitor_close_dep_share_prev:=Winsorize(competitor_close_dep_share_prev, val = quantile(competitor_close_dep_share_prev, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,competitor_close_dep_share_prev_app:=Winsorize(competitor_close_dep_share_prev_app, val = quantile(competitor_close_dep_share_prev_app, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,competitor_close_dep_share_prev_noapp:=Winsorize(competitor_close_dep_share_prev_noapp, val = quantile(competitor_close_dep_share_prev_noapp, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+# dt[,competitor_openings_rate:=Winsorize(competitor_openings_rate, val = quantile(competitor_openings_rate, probs = c(0.01, 0.99), na.rm = T))]
 
 dt[,zip_yr:=paste(ZIPBR,YEAR)]
 
@@ -229,12 +236,22 @@ g2 <- ggplot(dt_1yr[YEAR %in% 2015:2019],aes(x=competitor_close_dep_share_prev))
 grid.arrange(g1,g2,nrow=1)
 ```
 
+```{r}
+g1 <- ggplot(dt_1yr[YEAR %in% 2015:2019],aes(x=competitor_close_dep_share_prev_app))+geom_histogram()+ggtitle("with apps - closure deposit share (t−1)")+theme_minimal()
+g2 <- ggplot(dt_1yr[YEAR %in% 2015:2019],aes(x=competitor_close_dep_share_prev_noapp))+geom_histogram()+ggtitle("no apps - closure deposit share (t−1)")+theme_minimal()
+grid.arrange(g1,g2,nrow=1)
+```
+
 
 ## Summary Stats - 2019
 ```{r}
 temp <- summary_stats_function(dt_1yr[YEAR==2019],
                                c("competitor_closures_rate",
                                  "competitor_close_dep_share_prev",
+                                 "competitor_closures_rate_app",
+                                 "competitor_closures_rate_noapp",
+                                 "competitor_close_dep_share_prev_app",
+                                 "competitor_close_dep_share_prev_noapp",
                                  "dep_gr_3yr",
                                  "dep_gr_1yr",
                                  "sophisticated_ed_sm",
@@ -246,12 +263,35 @@ temp <- summary_stats_function(dt_1yr[YEAR==2019],
 
 md_table(temp)
 ```
+
+
+## Closure deposit share mean
+```{r}
+t <- dt_1yr[competitor_close_dep_share_prev>0,.(competitor_close_dep_share_prev=mean(competitor_close_dep_share_prev),
+                                                competitor_close_dep_share_prev_app = mean(competitor_close_dep_share_prev_app),
+                                                competitor_close_dep_share_prev_noapp = mean(competitor_close_dep_share_prev_noapp)),
+            by=YEAR]
+
+t <- melt(t, id.vars = "YEAR")
+
+ggplot(t,aes(x=YEAR,y=value,color=variable))+geom_line()
+```
+
+
 ## No of branches per zip code 2019
 ```{r}
 temp <- dt_1yr[YEAR==2019,.(ZIPBR)]
 temp <- temp[,.N,by=ZIPBR]
 temp[,N:=pmax(pmin(N, 25), 1)]
 hist(temp$N)
+```
+
+
+## Banks with apps
+```{r}
+app_df <- fread("C:/data/data_bank_mobile_apps_2000_2021.csv")
+app_df <- app_df[,.(frac_banks_with_apps = mean(first_app_available,na.rm=T)),by=year]
+ggplot(app_df,aes(x=year,y=frac_banks_with_apps))+geom_line()
 ```
 
 ```{r}
@@ -261,9 +301,13 @@ setFixest_fml(
   ..fixef_br_ctyyr_bnkyr    = ~ UNINUMBR+county_yr + bank_yr,
   ..vcov      = ~ UNINUMBR,
   ..fml_baseline_no = ~competitor_closures_rate +  log1p(DEPSUMBR) ,
-  ..fml_baseline_amt = ~competitor_close_dep_share_prev+ +  log1p(DEPSUMBR),
+  ..fml_baseline_amt = ~competitor_close_dep_share_prev+  log1p(DEPSUMBR),
+  ..fml_baseline_no_app = ~competitor_closures_rate_app + competitor_closures_rate_noapp +  log1p(DEPSUMBR),
+  ..fml_baseline_amt_app = ~competitor_close_dep_share_prev_app + competitor_close_dep_share_prev_noapp +  log1p(DEPSUMBR),
   ..fml_interaction_amt = ~competitor_close_dep_share_prev*sophisticated_ed_sm + log1p(DEPSUMBR),
-  ..fml_interactions_amt = ~competitor_close_dep_share_prev*sophisticated_ed_sm +competitor_close_dep_share_prev*log_income+ competitor_close_dep_share_prev*factor_age_bin + log1p(DEPSUMBR)
+  ..fml_interactions_amt = ~competitor_close_dep_share_prev*sophisticated_ed_sm +competitor_close_dep_share_prev*log_income+ competitor_close_dep_share_prev*factor_age_bin + log1p(DEPSUMBR),
+  ..fml_interaction_amt_app = ~competitor_close_dep_share_prev_app*sophisticated_ed_sm + competitor_close_dep_share_prev_noapp*sophisticated_ed_sm + log1p(DEPSUMBR),
+  ..fml_interactions_amt_app = ~competitor_close_dep_share_prev_app*sophisticated_ed_sm +competitor_close_dep_share_prev_app*log_income+ competitor_close_dep_share_prev_app*factor_age_bin + competitor_close_dep_share_prev_noapp*sophisticated_ed_sm +competitor_close_dep_share_prev_noapp*log_income+ competitor_close_dep_share_prev_noapp*factor_age_bin+log1p(DEPSUMBR)
 )
 
 dict <- c(
@@ -309,6 +353,30 @@ md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
          headers= c(rep("Full Sample",4),"less -3yr chg","DV: t+3")))
 ```
 
+
+
+# With app data
+
+```{r}
+reg_list <- list()
+
+reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr, data = dt_1yr)
+
+reg_list[[2]]  <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_ctyyr_bnkyr, data = dt_1yr,vcov = ~ UNINUMBR) 
+
+reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr_bnkyr, data = dt_1yr) 
+
+reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_baseline_no_app|..fixef_br_ctyyr,data = dt_1yr)
+
+reg_list[[5]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr,data = dt_1yr_prev_3yr_filter)
+
+reg_list[[6]] <- feols(dep_gr_3yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr, data = dt_3yr)
+
+md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
+         headers= c(rep("Full Sample",4),"less -3yr chg","DV: t+3")))
+```
+
+
 # Zip Demographic Interactions
 
 ```{r}
@@ -322,6 +390,21 @@ reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt|..fixef_br_ctyyr_bnky
 md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
 ```
 
+
+
+# Zip Demographic Interactions with app
+
+```{r}
+reg_list <- list()
+
+reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_interaction_amt_app|..fixef_br_ctyyr,data = dt_1yr)
+reg_list[[2]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_br_ctyyr,data = dt_1yr)
+reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr,vcov = ~ UNINUMBR)
+reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_br_ctyyr_bnkyr,data = dt_1yr)
+
+md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
 # Split by  Time
 
 ```{r}
@@ -331,6 +414,21 @@ reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt|..fixef_ctyyr_bnkyr,d
 reg_list[[2]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2008:2011],vcov = ~ UNINUMBR)
 reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2012:2019],vcov = ~ UNINUMBR)
 reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2020:2024],vcov = ~ UNINUMBR)
+
+
+md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
+                headers= c("2000:2007","2008:2011","2012:2019","2020:2024")))
+```
+
+# Split by  Time with app
+
+```{r}
+reg_list <- list()
+
+reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2000:2007],vcov = ~ UNINUMBR)
+reg_list[[2]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2008:2011],vcov = ~ UNINUMBR)
+reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2012:2019],vcov = ~ UNINUMBR)
+reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2020:2024],vcov = ~ UNINUMBR)
 
 
 md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
