@@ -46,7 +46,7 @@ app_df[, first_app_available := as.integer(first_app_available)]
 # 1. Keep relevant columns and attach app flag
 # ---------------------------------------------------------------------
 closure_opening_data <- closure_opening_data[
-  , .(RSSDID, UNINUMBR, ZIPBR, YEAR, DEPSUMBR, STCNTY,
+  , .(RSSDID, UNINUMBR, ZIPBR, YEAR, DEPSUMBR, STCNTYBR,
       closed, new_branch)
 ]
 

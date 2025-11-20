@@ -78,14 +78,23 @@ all_sod <- rbindlist(
   fill = TRUE
 )
 
-# optional: convert deposits to dollars instead of $000
+# convert deposits to dollars instead of $000
 all_sod[, deposits_dollars := as.numeric(DEPSUMBR) * 1000]
 
+sod <- all_sod[!is.na(UNINUMBR), .(UNINUMBR,
+                                   YEAR,
+                                   RSSDID,
+                                   RSSDHCR,
+                                   CERT,
+                                   ASSET,
+                                   DEPSUMBR,
+                                   ZIPBR,
+                                   STCNTYBR)]
 #------------------------------------------------
 # Save as .Rds
 #------------------------------------------------
 saveRDS(all_sod, file = "C:/data/fdic_sod_2000_2025.rds")
-
+saveRDS(sod, file = "C:/data/fdic_sod_2000_2025_simple.rds")
 # Quick sanity check
 print(dim(all_sod))
 print(head(all_sod))

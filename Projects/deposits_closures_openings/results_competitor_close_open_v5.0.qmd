@@ -12,7 +12,7 @@ format:
 editor: source
 execute: 
   warning: false
-  echo: false
+  echo: true
 ---
 
 
@@ -74,7 +74,7 @@ dt[,competitor_close_dep_share_prev_noapp:=Winsorize(competitor_close_dep_share_
 
 dt[,zip_yr:=paste(ZIPBR,YEAR)]
 
-dt[,county:=str_pad(STCNTY,5,"left","0")]
+dt[,county:=str_pad(STCNTYBR,5,"left","0")]
 dt[,county_yr:=paste(county,YEAR)]
 dt[,bank_yr:=paste(RSSDID,YEAR)]
 
@@ -355,25 +355,26 @@ md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
 
 
 
-# With app data
+
 
 ```{r}
-reg_list <- list()
-
-reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr, data = dt_1yr)
-
-reg_list[[2]]  <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_ctyyr_bnkyr, data = dt_1yr,vcov = ~ UNINUMBR) 
-
-reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr_bnkyr, data = dt_1yr) 
-
-reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_baseline_no_app|..fixef_br_ctyyr,data = dt_1yr)
-
-reg_list[[5]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr,data = dt_1yr_prev_3yr_filter)
-
-reg_list[[6]] <- feols(dep_gr_3yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr, data = dt_3yr)
-
-md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
-         headers= c(rep("Full Sample",4),"less -3yr chg","DV: t+3")))
+# # With app data
+# reg_list <- list()
+# 
+# reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr, data = dt_1yr)
+# 
+# reg_list[[2]]  <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_ctyyr_bnkyr, data = dt_1yr,vcov = ~ UNINUMBR) 
+# 
+# reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr_bnkyr, data = dt_1yr) 
+# 
+# reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_baseline_no_app|..fixef_br_ctyyr,data = dt_1yr)
+# 
+# reg_list[[5]] <- feols(dep_gr_1yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr,data = dt_1yr_prev_3yr_filter)
+# 
+# reg_list[[6]] <- feols(dep_gr_3yr ~ ..fml_baseline_amt_app|..fixef_br_ctyyr, data = dt_3yr)
+# 
+# md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
+#          headers= c(rep("Full Sample",4),"less -3yr chg","DV: t+3")))
 ```
 
 
@@ -392,17 +393,18 @@ md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
 
 
 
-# Zip Demographic Interactions with app
+
 
 ```{r}
-reg_list <- list()
-
-reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_interaction_amt_app|..fixef_br_ctyyr,data = dt_1yr)
-reg_list[[2]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_br_ctyyr,data = dt_1yr)
-reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr,vcov = ~ UNINUMBR)
-reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_br_ctyyr_bnkyr,data = dt_1yr)
-
-md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+# # Zip Demographic Interactions with app
+# reg_list <- list()
+# 
+# reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_interaction_amt_app|..fixef_br_ctyyr,data = dt_1yr)
+# reg_list[[2]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_br_ctyyr,data = dt_1yr)
+# reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr,vcov = ~ UNINUMBR)
+# reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_br_ctyyr_bnkyr,data = dt_1yr)
+# 
+# md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
 ```
 
 # Split by  Time
@@ -420,17 +422,18 @@ md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
                 headers= c("2000:2007","2008:2011","2012:2019","2020:2024")))
 ```
 
-# Split by  Time with app
+
 
 ```{r}
-reg_list <- list()
-
-reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2000:2007],vcov = ~ UNINUMBR)
-reg_list[[2]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2008:2011],vcov = ~ UNINUMBR)
-reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2012:2019],vcov = ~ UNINUMBR)
-reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2020:2024],vcov = ~ UNINUMBR)
-
-
-md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
-                headers= c("2000:2007","2008:2011","2012:2019","2020:2024")))
+# # Split by  Time with app
+# reg_list <- list()
+# 
+# reg_list[[1]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2000:2007],vcov = ~ UNINUMBR)
+# reg_list[[2]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2008:2011],vcov = ~ UNINUMBR)
+# reg_list[[3]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2012:2019],vcov = ~ UNINUMBR)
+# reg_list[[4]] <- feols(dep_gr_1yr ~ ..fml_interactions_amt_app|..fixef_ctyyr_bnkyr,data = dt_1yr[YEAR %in% 2020:2024],vcov = ~ UNINUMBR)
+# 
+# 
+# md_table(etable(reg_list,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
+#                 headers= c("2000:2007","2008:2011","2012:2019","2020:2024")))
 ```

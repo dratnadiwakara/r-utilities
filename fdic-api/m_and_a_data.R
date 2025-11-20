@@ -5,7 +5,13 @@ base_url <- "https://api.fdic.gov/banks/history"
 
 # ---- Filters ----
 # FI-level only + EFFDATE >= 1995-01-01 + CHANGECODE in required set
-filter_str <- 'ORG_ROLE_CDE:"FI" AND EFFDATE:[1995-01-01 TO 9999-12-31] AND (CHANGECODE:810 OR CHANGECODE:223 OR CHANGECODE:221 OR CHANGECODE:811 OR CHANGECODE:240 OR CHANGECODE:222)'
+filter_str <- 'ORG_ROLE_CDE:"FI" AND EFFDATE:[1995-01-01 TO 9999-12-31] AND (CHANGECODE:223 OR CHANGECODE:221  OR CHANGECODE:240 OR CHANGECODE:222)'
+# CHANGECODE: 
+#   221 = Merger (Standard consolidation)
+#   222 = Sale of Assets & Assumption of Liabilities (Strategic acquisition)
+#   223 = Reorganization (Included to capture complex charter consolidations)
+#   Excludes 810/811 (Failures/Assistance) to satisfy the "Strategic/Exogenous" assumption.
+# ORG_ROLE_CDE: "FI" (Financial Institutions only)
 
 # ---- Fields ----
 fields_str <- paste(
@@ -54,7 +60,7 @@ repeat {
   offset <- offset + limit
 }
 
-all_dt <- all_dt[!duplicated(all_dt[,.(TRANSNUM)])]
+all_dt <- unique(all_dt, by = "TRANSNUM")
 
 saveRDS(all_dt, "C:/data/m_and_a_data.rds")
 

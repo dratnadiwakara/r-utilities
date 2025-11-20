@@ -4,7 +4,7 @@ library(dplyr)
 library(ggplot2)
 
 # 1. Load the full dataset ----------------------------------------------------
-branch_year <- readRDS("C:/data/fdic_sod_2000_2025.rds") # sod_download_all_data_to_rds.R
+branch_year <- readRDS("C:/data/fdic_sod_2000_2025_simple.rds") # sod_download_all_data_to_rds.R
 
 
 
@@ -90,10 +90,11 @@ closure_opening_data <- branch_year %>%
   select(
     RSSDHCR,
     RSSDID,
+    CERT,
     UNINUMBR,
     DEPSUMBR,
     ZIPBR,
-    STCNTY,
+    STCNTYBR,
     YEAR,
     closed,
     new_branch
