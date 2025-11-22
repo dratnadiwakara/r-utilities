@@ -1,0 +1,559 @@
+---
+title: "ZIP-YEAR Results - 11/21/2025"
+format:
+  html:
+    page-layout: full
+    # optional: keep text from getting too wide
+    # css: styles.css
+    code-overflow: scroll
+    code-fold: true
+    number-sections: true
+    self-contained: true
+editor: source
+execute: 
+  warning: false
+  echo: true
+---
+
+
+```{r}
+suppressMessages({
+  rm(list=ls())
+  library(data.table)
+  library(fixest)
+  library(DescTools)
+  library(dplyr)
+  library(ggplot2)
+  library(gridExtra)
+  library(readxl)
+  library(stringr)
+  library(marginaleffects)
+  library(scales)
+})
+source('https://raw.githubusercontent.com/dratnadiwakara/r-utilities/refs/heads/main/summary_stat_tables.R')
+```
+
+
+# Sample Construction
+
+Aggregated the dataset from the branch-year level to the ZIP-year level. For each ZIP-year, classified banks as either "Incumbents" (zero closures in that ZIP) or "Closers" (at least one closure). The dependent variable is the aggregate deposit growth of the Incumbent banks, calculated as the percentage change in the sum of deposits held by all non-closing banks from $t$ to $t+k$. The primary independent variable is share_deps_closed, calculated as the total deposits of branches closed by "Closers" at $t-1$ divided by the total deposits in the ZIP at $t-1$. 
+
+Excluded ZIP-years that had fewer than three branches in the previous year.
+
+
+```{r}
+dt <- readRDS("C:/data/zip_competition_churn_panel_refined_3.rds")
+setDT(dt)
+
+zip_county <- fread("C:/data/zip_to_county_mapping.csv")
+zip_county[,ZIP:=str_pad(ZIP,5,"left","0")]
+zip_cbsa <- fread("C:/data/zip_to_cbsa_mapping.csv")
+zip_cbsa[,ZIP:=str_pad(ZIP,5,"left","0")]
+
+dt <- merge(dt,zip_county,by.x="ZIPBR",by.y="ZIP")
+dt <- merge(dt,zip_cbsa,by.x="ZIPBR",by.y="ZIP")
+
+dt[,county_yr:=paste(COUNTY,YEAR)]
+dt[,cbsa_yr:=paste(CBSA,YEAR)]
+
+
+dt <- dt[branches_zip_lag1>=3]
+
+# dt[,frac_branches_closed:=Winsorize(frac_branches_closed, val = quantile(frac_branches_closed, probs = c(0, 0.99), na.rm = T)),by=YEAR]
+dt[,share_deps_closed:=Winsorize(share_deps_closed, val = quantile(share_deps_closed, probs = c(0, 0.99), na.rm = T)),by=YEAR]
+
+# dt[,incumbent_dep_gr_1yr:=Winsorize(incumbent_dep_gr_1yr, val = quantile(incumbent_dep_gr_1yr, probs = c(0, 0.99), na.rm = T)),by=YEAR]
+# dt[,incumbent_dep_gr_3yr:=Winsorize(incumbent_dep_gr_3yr, val = quantile(incumbent_dep_gr_3yr, probs = c(0, 0.99), na.rm = T)),by=YEAR]
+
+dt[,incumbent_growth_share_1yr:=Winsorize(incumbent_growth_share_1yr, val = quantile(incumbent_growth_share_1yr, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,incumbent_growth_share_3yr:=Winsorize(incumbent_growth_share_3yr, val = quantile(incumbent_growth_share_3yr, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,incumbent_growth_share_3yr_alt:=Winsorize(incumbent_growth_share_3yr_alt, val = quantile(incumbent_growth_share_3yr_alt, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+```
+
+
+
+```{r}
+# 8. Zip code level characteristics -----------------------
+
+library(readxl)
+library(stringr)
+
+acs_data <- readRDS("C:/data/acs_data_2010_2022_tract.rds")
+
+tract_zip_crosswalk <- read_excel('C:/data/ZIP_TRACT_122019.xlsx')
+tract_zip_crosswalk <- data.table(tract_zip_crosswalk)
+tract_zip_crosswalk[,zip:=str_pad(ZIP,5,"left","0")]
+tract_zip_crosswalk[,tract:=as.character(TRACT)]
+tract_zip_crosswalk[,tract:=str_pad(tract,11,"left","0")]
+tract_zip_crosswalk[,tot_ratio:=TOT_RATIO]
+
+
+acs_with_zip <- acs_data %>%
+  left_join(tract_zip_crosswalk[,c("zip","tract","tot_ratio")], by = c("tract" = "tract"))
+
+
+
+zip_aggregated_data <- acs_with_zip %>%
+  group_by(zip,yr) %>%
+  summarize(
+    # Weighted average of median income
+    median_income = sum(median_income * tot_ratio, na.rm = T) ,
+    
+    # Weighted average of percentage of population with a bachelor's degree
+    pct_college_educated = sum(pct_college_educated * tot_ratio, na.rm=T),
+    
+    # Weighted average of white population percentage
+    # white_population_pct = sum(white_populationE * RES_RATIO,na.rm=T),
+    
+    # Weighted average of median age
+    median_age = sum(median_age * tot_ratio,na.rm = T)
+    
+    # Total population is weighted by RES_RATIO
+    # total_population = sum(total_populationE * RES_RATIO)
+  )
+
+zip_aggregated_data <- data.table(zip_aggregated_data)
+
+irs_data <- readRDS("C:/data/irs_data_2010_2022_zip.rds")
+
+
+irs_data <- irs_data[,c("zipcode","yr","dividend_frac","capital_gain_frac")]
+irs_data[,zipcode:=str_pad(zipcode,5,"left","0")]
+# 
+zip_demo_data <- merge(zip_aggregated_data,irs_data,by.x=c("zip","yr"),by.y=c("zipcode","yr"),all.x=T)
+
+
+key_chars <- c("median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac")
+
+zip_demo_data <- data.table(zip_demo_data)
+zip_demo_data[,paste0(key_chars,"_q"):=lapply(.SD, function(x) ntile(x,2)),by=yr,.SDcols = key_chars]
+
+zip_demo_data[,sophisticated_ed_sm:=ifelse(!is.na(dividend_frac)  & pct_college_educated_q==2 & (dividend_frac_q==2 | capital_gain_frac_q==2),1,
+                                           ifelse(!is.na(dividend_frac),0,NA))]
+
+
+zip_demo_data <- zip_demo_data[,c("zip","yr","median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac","sophisticated_ed_sm")]
+
+zip_demo_data[,age_bin:=ntile(median_age,2),by=yr]
+zip_demo_data[,above_median_age:=ifelse(age_bin==2,1,0)]
+zip_demo_data[,income_bin:=ntile(median_income,2),by=yr]
+zip_demo_data[,above_median_income:=ifelse(income_bin==2,1,0)]
+
+temp1 <- zip_demo_data[yr==2010]
+for(y in c(2000:2009,2011:2012)) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2013]
+for(y in 2014:2015) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+
+
+temp1 <- zip_demo_data[yr==2016]
+for(y in 2017:2018) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+
+temp1 <- zip_demo_data[yr==2019]
+for(y in 2020:2021) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2022]
+for(y in 2023:2025) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+
+dt <- merge(dt,
+            zip_demo_data[!is.na(zip),.(zip,yr,sophisticated_ed_sm,age_bin,median_age,median_income,
+                                        pct_college_educated,capital_gain_frac,dividend_frac,above_median_age,above_median_income)],
+            by.x=c("ZIPBR","YEAR"),
+            by.y=c("zip","yr"),
+            all.x=T)
+
+dt <- dt[!is.na(sophisticated_ed_sm)]
+dt[, sophisticated_ed_sm := as.integer(sophisticated_ed_sm == 1L)]
+dt[, factor_age_bin := factor(age_bin)]
+dt[, log_income := log1p(median_income)]
+
+
+```
+
+
+
+## Summary Stats - 2019
+```{r}
+temp <- summary_stats_function(dt[YEAR==2019],
+                               c("incumbent_dep_gr_1yr",
+                                 "incumbent_dep_gr_3yr",
+                                 "share_deps_closed",
+                                 "frac_branches_closed",
+                                 "sophisticated_ed_sm",
+                                 "above_median_age",
+                                 "above_median_income"))
+
+md_table(temp)
+```
+
+
+# Distribution of Key Variables in 2019
+
+```{r}
+# A. Distribution of the SHOCK (Share of Deposits Closed)
+# Filter > 0 to see the distribution *conditional on a closure happening*
+g1 <- ggplot(dt[share_deps_closed > 0 & YEAR==2019], aes(x = share_deps_closed)) +
+  geom_histogram(bins = 30, fill = "firebrick", color = "white", alpha = 0.8) +
+  labs(title = "The Shock", 
+       subtitle = "Share of Deposits Closed\n(Conditional on > 0)",
+       x = "Share Closed", y = "Count") +
+  scale_x_continuous(labels = scales::percent) +
+  theme_minimal()
+
+# B. Distribution of OUTCOME 1 (Incumbent Growth 1-Yr)
+g2 <- ggplot(dt[ YEAR==2019], aes(x = incumbent_dep_gr_3yr)) +
+  geom_histogram(bins = 50, fill = "steelblue", color = "white", alpha = 0.8) +
+  geom_vline(aes(xintercept = mean(incumbent_dep_gr_1yr, na.rm=T)), color="black", linetype="dashed") +
+  labs(title = "Short-Term Outcome", 
+       subtitle = "Incumbent Growth (1-Yr)",
+       x = "Growth Rate", y = "Count") +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(xlim = c(-0.5, 1.0)) + # Zoom focus
+  theme_minimal()
+
+# C. Distribution of OUTCOME 2 (Incumbent Growth 3-Yr)
+g3 <- ggplot(dt[ YEAR==2019], aes(x = incumbent_growth_share_3yr)) +
+  geom_histogram(bins = 50, fill = "darkgreen", color = "white", alpha = 0.8) +
+  geom_vline(aes(xintercept = mean(incumbent_dep_gr_3yr, na.rm=T)), color="black", linetype="dashed") +
+  labs(title = "Medium-Term Outcome", 
+       subtitle = "Incumbent Growth (3-Yr)",
+       x = "Growth Rate", y = "Count") +
+  scale_x_continuous(labels = scales::percent) +
+  coord_cartesian(xlim = c(-0.5, 1.5)) + # Wider zoom for 3yr (accumulated growth)
+  theme_minimal()
+
+# Arrange all 3 side-by-side
+grid.arrange(g1, g2, g3, ncol = 3)
+```
+
+# Univariate: Baseline - Extensive Margin
+
+```{r}
+dt[, has_closure := fifelse(share_deps_closed > 0, "ZIP with Closure", "ZIP with no Closure")]
+
+# Calculate average growth for both groups
+summary_stats <- dt[!is.na(has_closure), .(
+  avg_growth = mean(incumbent_dep_gr_3yr, na.rm = TRUE),
+  obs_count = .N
+), by = has_closure]
+
+plot1 <- ggplot(summary_stats, aes(x = has_closure, y = avg_growth, fill = has_closure)) +
+  geom_col(width = 0.6, alpha = 0.8) +
+  scale_y_continuous(labels = percent) +
+  scale_fill_manual(values = c("Stable ZIP" = "grey60", "ZIP with Closure" = "firebrick")) +
+  labs(
+    title = "Impact of Closures on Incumbent Growth",
+    subtitle = "Average 3-Year Deposit Growth Rate",
+    x = "", y = "Avg Growth Rate"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
+print(plot1)
+```
+
+# Univariate: Baseline - Intensive Margin
+
+```{r}
+closure_subset <- dt[share_deps_closed > 0]
+
+# Create 10 "bins" of closure intensity (deciles)
+closure_subset[, bin := cut(share_deps_closed, breaks = 10, labels = FALSE)]
+
+# Aggregate by bin
+bin_stats <- closure_subset[, .(
+  avg_share_closed = mean(share_deps_closed, na.rm = TRUE),
+  avg_growth = mean(incumbent_dep_gr_1yr, na.rm = TRUE)
+), by = bin]
+
+plot2 <- ggplot(bin_stats, aes(x = avg_share_closed, y = avg_growth)) +
+  geom_point(size = 4, color = "steelblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linetype = "dashed") +
+  scale_x_continuous(labels = percent, name = "Share of Deposits Closed (Shock Intensity)") +
+  scale_y_continuous(labels = percent, name = "Resulting Incumbent Growth (1-Yr)") +
+  labs(
+    title = "Binned Scatterplot of Closure Intensity vs. Incumbent Growth"
+  ) +
+  theme_minimal()
+
+print(plot2)
+```
+
+# Univariate: Sophistication Interaction - Extensive Margin
+```{r}
+dt[, has_closure := fifelse(share_deps_closed > 0, "ZIP with Closure", "No Closure")]
+dt[, soph_label  := fifelse(sophisticated_ed_sm == 1, "Sophisticated Market", "Unsophisticated Market")]
+
+# 2. AGGREGATE
+# We group by BOTH variables now
+summary_stats_2x2 <- dt[!is.na(sophisticated_ed_sm) & !is.na(has_closure), .(
+  avg_growth = mean(incumbent_dep_gr_3yr, na.rm = TRUE),
+  obs_count = .N
+), by = .(soph_label, has_closure)]
+
+# 3. PLOT
+plot_2x2 <- ggplot(summary_stats_2x2, aes(x = soph_label, y = avg_growth, fill = has_closure)) +
+  
+  # Use 'position = "dodge"' to put bars side-by-side instead of stacked
+  geom_col(position = position_dodge(width = 0.8), width = 0.7, alpha = 0.9) +
+  
+  # Add text labels above the bars (also need to be dodged to align with bars)
+  geom_text(aes(label = percent(avg_growth, accuracy = 0.1)), 
+            position = position_dodge(width = 0.8), 
+            vjust = -0.5, size = 4) +
+  
+  scale_y_continuous(labels = percent, limits = c(0, max(summary_stats_2x2$avg_growth) * 1.1)) +
+  
+  # Your custom colors
+  scale_fill_manual(values = c("No Closure" = "grey70", "ZIP with Closure" = "firebrick")) +
+  
+  labs(
+    title = "Average 3-Year Incumbent Growth by Market Type",
+    x = "", 
+    y = "Avg Growth Rate",
+    fill = "Event Status"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold"),
+    legend.position = "top",
+    axis.text.x = element_text(size = 11, face = "bold")
+  )
+
+print(plot_2x2)
+```
+# Univariate: Sophistication Interaction - Intensive Margin
+```{r}
+closure_subset <- dt[share_deps_closed > 0]
+
+# Create a nice text label for the legend
+closure_subset[, soph_label := fifelse(sophisticated_ed_sm == 1, "Sophisticated", "Unsophisticated")]
+
+# 2. CREATE BINS
+# We create bins based on the shock size across the whole subset
+closure_subset[, bin := cut(share_deps_closed, breaks = 10, labels = FALSE)]
+
+# 3. AGGREGATE (The Key Step)
+# We calculate the averages separately for EACH bin in EACH group
+bin_stats_split <- closure_subset[, .(
+  avg_share_closed = mean(share_deps_closed, na.rm = TRUE),
+  avg_growth       = mean(incumbent_dep_gr_1yr, na.rm = TRUE) 
+), by = .(bin, soph_label)]
+
+# 4. PLOT
+plot_split_bin <- ggplot(bin_stats_split, aes(x = avg_share_closed, y = avg_growth, color = soph_label)) +
+  
+  # A. The Points (The actual binned averages)
+  geom_point(size = 4, alpha = 0.7) +
+  
+  # B. The Lines (Linear fit through the points)
+  geom_smooth(method = "lm", se = FALSE, size = 1.2) +
+  
+  # C. Formatting
+  scale_x_continuous(labels = percent, name = "Share of Deposits Closed (Shock Intensity)") +
+  scale_y_continuous(labels = percent, name = "Incumbent Growth (3-Yr)") +
+  
+  scale_color_manual(values = c("Unsophisticated" = "firebrick", "Sophisticated" = "steelblue")) +
+  
+  labs(
+    title = "Binned Scatterplot of Closure Intensity vs. Incumbent Growth",
+    color = "Market Type"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "top")
+
+print(plot_split_bin)
+```
+# Sample Composition
+
+To do: add a third plot showing pct of deposits in sample
+```{r}
+yearly_stats <- dt[YEAR < 2025, .(
+  avg_closure_rate = mean(frac_branches_closed, na.rm = TRUE),
+  pct_zips_with_closure = mean(share_deps_closed > 0, na.rm = TRUE),
+  num_zips = .N 
+), by = YEAR]
+
+# 2. PLOT A: The Closure Trend (Top Plot)
+plot3 <- ggplot(yearly_stats, aes(x = YEAR, y = pct_zips_with_closure)) +
+  geom_line(linewidth = 1.2, color = "darkgreen") +
+  geom_point(size = 3, color = "darkgreen") +
+  scale_y_continuous(labels = percent) +
+  labs(
+    title = "Percentage of ZIPs experiencing a closure",
+    y = "% with Closure", 
+    x = "" # Remove x-label to avoid clutter in the middle
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank()) # Hide x-axis text for top plot
+
+# 3. PLOT B: The Sample Size (Bottom Plot)
+plot4 <- ggplot(yearly_stats, aes(x = YEAR, y = num_zips)) +
+  geom_col(fill = "grey40", alpha = 0.8, width = 0.7) + # Use bars for counts
+  scale_y_continuous(labels = comma) + # Format with commas (e.g. 10,000)
+  labs(
+    title = "Sample Size (Number of ZIPs)",
+    y = "Count", 
+    x = "Year"
+  ) +
+  theme_minimal()
+
+# 4. COMBINE
+# 'heights' creates a layout where the main plot (trend) takes up more space
+grid.arrange(plot3, plot4, ncol = 1, heights = c(1, 1))
+```
+
+
+
+
+```{r}
+setFixest_fml(
+  ..fixef_y_z_cbsayr     = ~ YEAR + ZIPBR + cbsa_yr,
+  ..fixef_y_z_cntyyr     = ~ YEAR + ZIPBR + county_yr,
+  ..fixef_cbsayr     = ~ cbsa_yr,
+  ..vcov      = ~ ZIPBR,
+  ..fml_baseline_amt = ~share_deps_closed+log1p(branches_zip_lag1) ,
+  ..fml_baseline_no = ~frac_branches_closed+log1p(branches_zip_lag1) ,
+  ..fml_interaction_amt = ~share_deps_closed*sophisticated_ed_sm + log1p(branches_zip_lag1),
+  ..fml_interactions_amt = ~share_deps_closed*sophisticated_ed_sm +share_deps_closed*above_median_age+ share_deps_closed*above_median_income + log1p(branches_zip_lag1)
+)
+
+dict <- c(
+  incumbent_dep_gr_3yr                        = "Dep gr(t to t+3)",
+  incumbent_dep_gr_1yr                        = "Dep gr(t to t+1)",
+  share_deps_closed      = "Share of deposits closed",
+  frac_branches_closed      = "Share of branches closed",
+  "log1p(branches_zip_lag1)" = "log(No of branches in ZIP t-1)",
+  sophisticated_ed_sm = "Sophisticated",
+  above_median_age = "Above median age",
+  above_median_income = "Above median income",
+  cbsa_yr = "CBSA*Year",
+  county_yr           = "County*Year"
+)
+
+
+setFixest_etable(
+  dict        = dict,
+  se.below    = TRUE
+)
+```
+
+```{r}
+summary(dt$incumbent_dep_gr_3yr)
+summary(dt$incumbent_growth_share_3yr)
+```
+
+
+# Baseline regression
+
+```{r}
+dt[,pos_share:=ifelse(share_deps_closed>0,1,0)]
+```
+
+```{r}
+r <- feols(incumbent_growth_share_3yr~pos_share|ZIPBR+YEAR+county_yr,data=dt)
+
+etable(r)
+```
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt | ..fixef_y_z_cbsayr,data=dt[share_deps_closed<0.1],vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt  | ..fixef_y_z_cbsayr,data=dt[share_deps_closed<0.1],vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt  | ..fixef_cbsayr,data=dt[share_deps_closed<0.1],vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt  | ..fixef_y_z_cntyyr,data=dt[share_deps_closed<0.1],vcov=~ZIPBR)
+# r[[5]] <- feols(incumbent_growth_share_3yr~..fml_baseline_no  | ..fixef_y_z_cbsayr ,data=dt,vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr_alt~..fml_baseline_amt | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr_alt2~..fml_baseline_amt  | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt  | ..fixef_cbsayr,data=dt,vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt  | ..fixef_y_z_cntyyr,data=dt,vcov=~ZIPBR)
+# r[[5]] <- feols(incumbent_growth_share_3yr~..fml_baseline_no  | ..fixef_y_z_cbsayr ,data=dt,vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+# Zip demographic interaction
+
+## Regression
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr_alt~..fml_interaction_amt | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr_alt~..fml_interactions_amt | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr_alt~..fml_interaction_amt | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_3yr_alt~..fml_interactions_amt | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+## Marginal Effect - Model 1
+```{r}
+# install.packages("marginaleffects")
+# mod_interaction <- feols(incumbent_dep_gr_3yr ~ share_deps_closed * sophisticated_ed_sm | YEAR + ZIPBR, data = dt)
+
+# This one function does the calculation AND the plotting
+plot_predictions(r[[1]], 
+                 condition = c("share_deps_closed", "sophisticated_ed_sm"),
+                 vcov = FALSE,
+                 conf_level = 0.95) + # It automatically handles your clustered SEs
+  labs(
+    title = "Marginal Effect",
+    y = "Predicted Incumbent Growth (3-Yr)",
+    x = "Share of Deposits Closed"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("firebrick", "steelblue")) +
+  scale_fill_manual(values = c("firebrick", "steelblue"))
+```
+
+# Time Split
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr_alt~..fml_interactions_amt | ..fixef_cbsayr,data=dt[YEAR %in% 2000:2007],vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr_alt~..fml_interactions_amt | ..fixef_cbsayr,data=dt[YEAR %in% 2008:2011],vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr_alt~..fml_interactions_amt | ..fixef_cbsayr,data=dt[YEAR %in% 2012:2019],vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_3yr_alt~..fml_interactions_amt | ..fixef_cbsayr,data=dt[YEAR %in% 2020:2024],vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
+                 headers= c("2000:2007","2008:2011","2012:2019","2020:2024")))
+
+```
+

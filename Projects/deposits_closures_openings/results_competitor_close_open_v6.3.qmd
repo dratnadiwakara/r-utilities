@@ -1,0 +1,283 @@
+---
+title: "ZIP-YEAR Results - 11/21/2025"
+format:
+  html:
+    page-layout: full
+    # optional: keep text from getting too wide
+    # css: styles.css
+    code-overflow: scroll
+    code-fold: true
+    number-sections: true
+    self-contained: true
+editor: source
+execute: 
+  warning: false
+  echo: true
+---
+
+
+```{r}
+suppressMessages({
+  rm(list=ls())
+  library(data.table)
+  library(fixest)
+  library(DescTools)
+  library(dplyr)
+  library(ggplot2)
+  library(gridExtra)
+  library(readxl)
+  library(stringr)
+  library(marginaleffects)
+  library(scales)
+})
+source('https://raw.githubusercontent.com/dratnadiwakara/r-utilities/refs/heads/main/summary_stat_tables.R')
+```
+
+
+# Sample Construction
+
+Aggregated the dataset from the branch-year level to the ZIP-year level. For each ZIP-year, classified banks as either "Incumbents" (zero closures in that ZIP) or "Closers" (at least one closure). The dependent variable is the aggregate deposit growth of the Incumbent banks, calculated as the percentage change in the sum of deposits held by all non-closing banks from $t$ to $t+k$. The primary independent variable is share_deps_closed, calculated as the total deposits of branches closed by "Closers" at $t-1$ divided by the total deposits in the ZIP at $t-1$. 
+
+Excluded ZIP-years that had fewer than three branches in the previous year.
+
+
+```{r}
+dt <- readRDS("C:/data/zip_competition_churn_panel_refined_4.rds")
+setDT(dt)
+
+zip_county <- fread("C:/data/zip_to_county_mapping.csv")
+zip_county[,ZIP:=str_pad(ZIP,5,"left","0")]
+zip_cbsa <- fread("C:/data/zip_to_cbsa_mapping.csv")
+zip_cbsa[,ZIP:=str_pad(ZIP,5,"left","0")]
+
+dt <- merge(dt,zip_county,by.x="ZIPBR",by.y="ZIP")
+dt <- merge(dt,zip_cbsa,by.x="ZIPBR",by.y="ZIP")
+
+dt[,county_yr:=paste(COUNTY,YEAR)]
+dt[,cbsa_yr:=paste(CBSA,YEAR)]
+
+
+dt <- dt[branches_zip_lag1>=2]
+
+dt[,share_deps_closed:=Winsorize(share_deps_closed, val = quantile(share_deps_closed, probs = c(0, 0.99), na.rm = T)),by=YEAR]
+
+
+dt[,incumbent_growth_share_1yr:=Winsorize(incumbent_growth_share_1yr, val = quantile(incumbent_growth_share_1yr, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,incumbent_growth_share_3yr:=Winsorize(incumbent_growth_share_3yr, val = quantile(incumbent_growth_share_3yr, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,incumbent_growth_share_3yr_alt:=Winsorize(incumbent_growth_share_3yr_alt, val = quantile(incumbent_growth_share_3yr_alt, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,incumbent_growth_share_1yr_alt:=Winsorize(incumbent_growth_share_1yr, val = quantile(incumbent_growth_share_1yr, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+
+dt <- dt[total_closed_vol_zip_lag1<100000]
+```
+
+
+
+```{r}
+# 8. Zip code level characteristics -----------------------
+
+library(readxl)
+library(stringr)
+
+acs_data <- readRDS("C:/data/acs_data_2010_2022_tract.rds")
+
+tract_zip_crosswalk <- read_excel('C:/data/ZIP_TRACT_122019.xlsx')
+tract_zip_crosswalk <- data.table(tract_zip_crosswalk)
+tract_zip_crosswalk[,zip:=str_pad(ZIP,5,"left","0")]
+tract_zip_crosswalk[,tract:=as.character(TRACT)]
+tract_zip_crosswalk[,tract:=str_pad(tract,11,"left","0")]
+tract_zip_crosswalk[,tot_ratio:=TOT_RATIO]
+
+
+acs_with_zip <- acs_data %>%
+  left_join(tract_zip_crosswalk[,c("zip","tract","tot_ratio")], by = c("tract" = "tract"))
+
+
+
+zip_aggregated_data <- acs_with_zip %>%
+  group_by(zip,yr) %>%
+  summarize(
+    # Weighted average of median income
+    median_income = sum(median_income * tot_ratio, na.rm = T) ,
+    
+    # Weighted average of percentage of population with a bachelor's degree
+    pct_college_educated = sum(pct_college_educated * tot_ratio, na.rm=T),
+    
+    # Weighted average of white population percentage
+    # white_population_pct = sum(white_populationE * RES_RATIO,na.rm=T),
+    
+    # Weighted average of median age
+    median_age = sum(median_age * tot_ratio,na.rm = T)
+    
+    # Total population is weighted by RES_RATIO
+    # total_population = sum(total_populationE * RES_RATIO)
+  )
+
+zip_aggregated_data <- data.table(zip_aggregated_data)
+
+irs_data <- readRDS("C:/data/irs_data_2010_2022_zip.rds")
+
+
+irs_data <- irs_data[,c("zipcode","yr","dividend_frac","capital_gain_frac")]
+irs_data[,zipcode:=str_pad(zipcode,5,"left","0")]
+# 
+zip_demo_data <- merge(zip_aggregated_data,irs_data,by.x=c("zip","yr"),by.y=c("zipcode","yr"),all.x=T)
+
+
+key_chars <- c("median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac")
+
+zip_demo_data <- data.table(zip_demo_data)
+zip_demo_data[,paste0(key_chars,"_q"):=lapply(.SD, function(x) ntile(x,2)),by=yr,.SDcols = key_chars]
+
+zip_demo_data[,sophisticated_ed_sm:=ifelse(!is.na(dividend_frac)  & pct_college_educated_q==2 & (dividend_frac_q==2 | capital_gain_frac_q==2),1,
+                                           ifelse(!is.na(dividend_frac),0,NA))]
+
+
+zip_demo_data <- zip_demo_data[,c("zip","yr","median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac","sophisticated_ed_sm")]
+
+zip_demo_data[,age_bin:=ntile(median_age,2),by=yr]
+zip_demo_data[,above_median_age:=ifelse(age_bin==2,1,0)]
+zip_demo_data[,income_bin:=ntile(median_income,2),by=yr]
+zip_demo_data[,above_median_income:=ifelse(income_bin==2,1,0)]
+
+temp1 <- zip_demo_data[yr==2010]
+for(y in c(2000:2009,2011:2012)) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2013]
+for(y in 2014:2015) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+
+
+temp1 <- zip_demo_data[yr==2016]
+for(y in 2017:2018) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+
+temp1 <- zip_demo_data[yr==2019]
+for(y in 2020:2021) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+temp1 <- zip_demo_data[yr==2022]
+for(y in 2023:2025) {
+  temp <- copy(temp1)
+  temp[,yr:=y]
+  zip_demo_data <- rbind(zip_demo_data,temp)
+}
+
+
+dt <- merge(dt,
+            zip_demo_data[!is.na(zip),.(zip,yr,sophisticated_ed_sm,age_bin,median_age,median_income,
+                                        pct_college_educated,capital_gain_frac,dividend_frac,above_median_age,above_median_income)],
+            by.x=c("ZIPBR","YEAR"),
+            by.y=c("zip","yr"),
+            all.x=T)
+
+dt <- dt[!is.na(sophisticated_ed_sm)]
+dt[, sophisticated_ed_sm := as.integer(sophisticated_ed_sm == 1L)]
+dt[, factor_age_bin := factor(age_bin)]
+dt[, log_income := log1p(median_income)]
+
+
+```
+
+
+```{r}
+setFixest_fml(
+  ..fixef_y_z_cbsayr     = ~ YEAR + ZIPBR + cbsa_yr,
+  ..fixef_y_z_cntyyr     = ~ YEAR + ZIPBR + county_yr,
+  ..fixef_cbsayr     = ~ cbsa_yr,
+  ..vcov      = ~ ZIPBR,
+  ..fml_baseline_amt = ~share_deps_closed+log1p(branches_zip_lag1) ,
+  ..fml_baseline_no = ~frac_branches_closed+log1p(branches_zip_lag1) ,
+  ..fml_interaction_amt = ~share_deps_closed*sophisticated_ed_sm + log1p(branches_zip_lag1),
+  ..fml_interactions_amt = ~share_deps_closed*sophisticated_ed_sm +share_deps_closed*above_median_age+ share_deps_closed*above_median_income + log1p(branches_zip_lag1)
+)
+
+dict <- c(
+  incumbent_dep_gr_3yr                        = "Dep gr(t to t+3)",
+  incumbent_dep_gr_1yr                        = "Dep gr(t to t+1)",
+  share_deps_closed      = "Share of deposits closed",
+  frac_branches_closed      = "Share of branches closed",
+  "log1p(branches_zip_lag1)" = "log(No of branches in ZIP t-1)",
+  sophisticated_ed_sm = "Sophisticated",
+  above_median_age = "Above median age",
+  above_median_income = "Above median income",
+  cbsa_yr = "CBSA*Year",
+  county_yr           = "County*Year"
+)
+
+
+setFixest_etable(
+  dict        = dict,
+  se.below    = TRUE
+)
+```
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt  +log1p(total_closed_vol_zip_lag1) | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr~..fml_baseline_amt   +log1p(total_closed_vol_zip_lag1)| ..fixef_y_z_cntyyr,data=dt,vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_1yr~..fml_baseline_amt  +log1p(total_closed_vol_zip_lag1) | ..fixef_y_z_cntyyr,data=dt,vcov=~ZIPBR)
+# r[[5]] <- feols(incumbent_growth_share_3yr~..fml_baseline_no  | ..fixef_y_z_cbsayr ,data=dt,vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr~..fml_interaction_amt | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr~..fml_interaction_amt  +log1p(total_closed_vol_zip_lag1) | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr~..fml_interaction_amt   +log1p(total_closed_vol_zip_lag1)| ..fixef_y_z_cntyyr,data=dt,vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_1yr~..fml_interaction_amt  +log1p(total_closed_vol_zip_lag1) | ..fixef_y_z_cntyyr,data=dt,vcov=~ZIPBR)
+# r[[5]] <- feols(incumbent_growth_share_3yr~..fml_baseline_no  | ..fixef_y_z_cbsayr ,data=dt,vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr~..fml_interactions_amt +log1p(total_closed_vol_zip_lag1)| ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr~..fml_interactions_amt  +log1p(total_closed_vol_zip_lag1) | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr~..fml_interactions_amt   +log1p(total_closed_vol_zip_lag1)| ..fixef_cbsayr,data=dt,vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_1yr~..fml_interactions_amt  +log1p(total_closed_vol_zip_lag1) | ..fixef_y_z_cntyyr,data=dt,vcov=~ZIPBR)
+# r[[5]] <- feols(incumbent_growth_share_3yr~..fml_baseline_no  | ..fixef_y_z_cbsayr ,data=dt,vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(incumbent_growth_share_3yr~..fml_interactions_amt+log1p(total_closed_vol_zip_lag1) | county_yr,data=dt[YEAR %in% 2000:2007],vcov=~ZIPBR)
+r[[2]] <- feols(incumbent_growth_share_3yr~..fml_interactions_amt +log1p(total_closed_vol_zip_lag1)| county_yr,data=dt[YEAR %in% 2008:2011],vcov=~ZIPBR)
+r[[3]] <- feols(incumbent_growth_share_3yr~..fml_interactions_amt +log1p(total_closed_vol_zip_lag1)| county_yr,data=dt[YEAR %in% 2012:2019],vcov=~ZIPBR)
+r[[4]] <- feols(incumbent_growth_share_3yr~..fml_interactions_amt +log1p(total_closed_vol_zip_lag1)| county_yr,data=dt[YEAR %in% 2020:2024],vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10),
+                 headers= c("2000:2007","2008:2011","2012:2019","2020:2024")))
+
+```
+
