@@ -267,26 +267,35 @@ final_zip_panel[, `:=`(
   # Numerator: (Aggregate Incumbent Current - Aggregate Incumbent Lag)
   # Denominator: Total Market Size Lag (Common Denominator)
   incumbent_growth_share_1yr = fifelse(total_deps_zip_lag1 > 0,
-                                       (incumbent_deps_lead1 - incumbent_deps_lag1) / total_deps_zip_lag1,
+                                       (incumbent_deps_lead1 - incumbent_deps_curr) / total_deps_zip_lag1,
                                        NA_real_),
   
   # 2. Medium Term Capture (t-1 to t+3)
   incumbent_growth_share_3yr = fifelse(total_deps_zip_lag1 > 0,
+                                       (incumbent_deps_lead3 - incumbent_deps_curr) / total_deps_zip_lag1,
+                                       NA_real_),
+  
+  incumbent_growth_share_1yr_from_last = fifelse(total_deps_zip_lag1 > 0,
+                                       (incumbent_deps_lead1 - incumbent_deps_lag1) / total_deps_zip_lag1,
+                                       NA_real_),
+  
+  # 2. Medium Term Capture (t-1 to t+3)
+  incumbent_growth_share_3yr_from_last = fifelse(total_deps_zip_lag1 > 0,
                                        (incumbent_deps_lead3 - incumbent_deps_lag1) / total_deps_zip_lag1,
                                        NA_real_),
   
   # 2. Medium Term Capture (t-1 to t+3)
-  incumbent_growth_share_3yr_alt = fifelse(incumbent_deps_curr > 0,
+  incumbent_growth_share_3yr_own_denominator = fifelse(incumbent_deps_curr > 0,
                                        (incumbent_deps_lead3 - incumbent_deps_curr) / incumbent_deps_curr,
                                        NA_real_),
   
-  incumbent_growth_share_1yr_alt = fifelse(incumbent_deps_curr > 0,
+  incumbent_growth_share_1yr_own_denominator = fifelse(incumbent_deps_curr > 0,
                                            (incumbent_deps_lead1 - incumbent_deps_curr) / incumbent_deps_curr,
                                            NA_real_)
 )]
 
 
-TOXIC_THRESHOLD <- 25000
+TOXIC_THRESHOLD <- 100000
 
 final_zip_panel[,`:=`(
                 # Variable A: The "Pure Opportunity" (Small/Normal closures)

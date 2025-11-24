@@ -37,7 +37,7 @@ source('https://raw.githubusercontent.com/dratnadiwakara/r-utilities/refs/heads/
 
 
 ```{r}
-dt <- readRDS("C:/data/zip_competition_churn_panel_refined_7.rds")
+dt <- readRDS("C:/data/zip_competition_churn_panel_refined_8.rds")
 setDT(dt)
 
 zip_county <- fread("C:/data/zip_to_county_mapping.csv")
@@ -195,14 +195,16 @@ dt[,share_closed_large :=Winsorize(share_closed_large , val = quantile(share_clo
 dt[,incumbent_growth_share_1yr:=Winsorize(incumbent_growth_share_1yr, val = quantile(incumbent_growth_share_1yr, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
 dt[,incumbent_growth_share_3yr:=Winsorize(incumbent_growth_share_3yr, val = quantile(incumbent_growth_share_3yr, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
 
-dt[,incumbent_growth_share_1yr_from_last:=Winsorize(incumbent_growth_share_1yr_from_last, val = quantile(incumbent_growth_share_1yr_from_last, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
-dt[,incumbent_growth_share_3yr_from_last:=Winsorize(incumbent_growth_share_3yr_from_last, val = quantile(incumbent_growth_share_3yr_from_last, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,deps_openings_by_closers_share:=Winsorize(deps_openings_by_closers_share, val = quantile(deps_openings_by_closers_share, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+# dt[,incumbent_growth_share_3yr_from_last:=Winsorize(incumbent_growth_share_3yr_from_last, val = quantile(incumbent_growth_share_3yr_from_last, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
 
-dt[,incumbent_growth_share_3yr_own_denominator:=Winsorize(incumbent_growth_share_3yr_own_denominator, val = quantile(incumbent_growth_share_3yr_own_denominator, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
-dt[,incumbent_growth_share_1yr_own_denominator:=Winsorize(incumbent_growth_share_1yr_own_denominator, val = quantile(incumbent_growth_share_1yr_own_denominator, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,incumbent_growth_share_3yr_own_deposits:=Winsorize(incumbent_growth_share_3yr_own_deposits, val = quantile(incumbent_growth_share_3yr_own_deposits, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+dt[,incumbent_growth_share_1yr_own_deposits:=Winsorize(incumbent_growth_share_1yr_own_deposits, val = quantile(incumbent_growth_share_1yr_own_deposits, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
 
 dt[,gr_3yr:=incumbent_growth_share_3yr]
-dt[,gr_3yr_own:=incumbent_growth_share_3yr_own_denominator]
+dt[,gr_3yr_own:=incumbent_growth_share_3yr_own_deposits]
+
+dt[,deps_openings_by_closers_share:=deps_openings_by_closers_curr/total_deps_zip_lag1]
 ```
 
 ```{r}
@@ -253,6 +255,20 @@ r[[5]] <- feols(gr_3yr~share_deps_closed+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,
 
 md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
 ```
+```{r}
+
+
+r <- list()
+r[[1]] <- feols(gr_3yr~share_deps_closed+log1p(branches_zip_lag1)+deps_openings_by_closers_share|ZIPBR+cbsa_yr,data=dt[is_clean_strict_exit==1])
+r[[2]] <- feols(gr_3yr~share_deps_closed+log1p(branches_zip_lag1)+small_shock+log1p(deps_openings_by_closers_curr)|ZIPBR+cbsa_yr,data=dt[is_clean_strict_exit==1])
+r[[3]] <- feols(gr_3yr~share_closed_small+share_closed_large+log1p(branches_zip_lag1)+log1p(deps_openings_by_closers_curr)|ZIPBR+cbsa_yr,data=dt[is_clean_strict_exit==1])
+r[[4]] <- feols(gr_3yr~share_deps_closed+log1p(branches_zip_lag1)+log1p(total_closed_vol_zip_lag1)+log1p(deps_openings_by_closers_curr) |ZIPBR+cbsa_yr,data=dt[is_clean_strict_exit==1])
+r[[5]] <- feols(gr_3yr~share_deps_closed+log1p(branches_zip_lag1)+log1p(deps_openings_by_closers_curr)|ZIPBR+cbsa_yr,data=dt[total_closed_vol_zip_lag1<100000 & is_clean_strict_exit==1])
+
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+```
+
 
 ```{r}
 
@@ -263,6 +279,9 @@ r[[2]] <- feols(gr_3yr_own~share_deps_closed+log1p(branches_zip_lag1)+small_shoc
 r[[3]] <- feols(gr_3yr_own~share_closed_small+share_closed_large+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,data=dt)
 r[[4]] <- feols(gr_3yr_own~share_deps_closed+log1p(branches_zip_lag1)+log1p(total_closed_vol_zip_lag1) |ZIPBR+cbsa_yr,data=dt)
 r[[5]] <- feols(gr_3yr_own~share_deps_closed+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,data=dt[total_closed_vol_zip_lag1<100000])
+r[[6]] <- feols(gr_3yr_own~share_deps_closed+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,data=dt[is_clean_observation==1])
+r[[7]] <- feols(gr_3yr_own~share_deps_closed+log1p(branches_zip_lag1)+deps_openings_by_closers_share|ZIPBR+cbsa_yr,data=dt[is_clean_observation==1])
+# r[[7]] <- feols(gr_3yr_own~share_deps_closed+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,data=dt[is_closer_full_exit==1])
 
 
 md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
@@ -278,7 +297,9 @@ r[[1]] <- feols(gr_3yr_own~share_deps_closed*sophisticated_ed_sm+log1p(branches_
 r[[2]] <- feols(gr_3yr_own~share_deps_closed*sophisticated_ed_sm+log1p(branches_zip_lag1)+small_shock|ZIPBR+cbsa_yr,data=dt)
 r[[3]] <- feols(gr_3yr_own~share_closed_small*sophisticated_ed_sm+share_closed_large*sophisticated_ed_sm+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,data=dt)
 r[[4]] <- feols(gr_3yr_own~share_deps_closed*sophisticated_ed_sm+log1p(branches_zip_lag1)+log1p(total_closed_vol_zip_lag1) |ZIPBR+cbsa_yr,data=dt)
-r[[5]] <- feols(gr_3yr_own~share_deps_closed*sophisticated_ed_sm+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,data=dt[total_closed_vol_zip_lag1<100000])
+r[[5]] <- feols(gr_3yr_own~share_deps_closed*sophisticated_ed_sm+log1p(branches_zip_lag1)|ZIPBR+cbsa_yr,data=dt[is_clean_observation==1])
+r[[6]] <- feols(gr_3yr_own~share_deps_closed*sophisticated_ed_sm+log1p(branches_zip_lag1)+deps_openings_by_closers_share|ZIPBR+cbsa_yr,data=dt)
+
 
 
 md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
