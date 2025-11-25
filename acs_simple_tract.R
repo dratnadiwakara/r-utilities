@@ -24,7 +24,7 @@ acs_vars <- c(
 all_states_data <- list()
 
 # Loop through each state to get ACS data at the tract level
-for(yr in seq(2010,2024,by=3)) {
+for(yr in seq(2010,2024,by=1)) {
   for (state in states) {
     state_yr <-paste(state,yr)
     message("Getting data for state: ", state_yr)
@@ -61,4 +61,4 @@ acs_data <- acs_data_combined %>%
     tract = GEOID
   )
 
-saveRDS(acs_data,"C:/data/acs_data_2010_2022_tract.rds")
+saveRDS(acs_data,"C:/data/acs_data_2010_2024_tract.rds")
