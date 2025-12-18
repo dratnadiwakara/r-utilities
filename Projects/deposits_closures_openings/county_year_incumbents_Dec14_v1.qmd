@@ -1,0 +1,468 @@
+---
+title: "Zip-YEAR - 12/03/2025"
+format:
+  html:
+    page-layout: full
+    # optional: keep text from getting too wide
+    # css: styles.css
+    code-overflow: scroll
+    code-fold: true
+    number-sections: true
+    self-contained: true
+editor: source
+execute: 
+  warning: false
+  echo: true
+---
+
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(fixest)
+library(DescTools)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(readxl)
+library(stringr)
+library(marginaleffects)
+
+source('https://raw.githubusercontent.com/dratnadiwakara/r-utilities/refs/heads/main/summary_stat_tables.R')
+```
+
+
+```{r}
+# dt <- readRDS("C:/data/county_competition_panel_Dec12_v1.rds")
+dt <- readRDS("C:/data/county_large_competition_panel_Dec14_v2.rds")
+setDT(dt)
+
+
+dt <- dt[branches_county_lag1>=3 & !is.na(incumbent_dep_gr_1yr)]
+
+# 1. Define the vector of variables to Winsorize
+winsor_vars <- c(
+  "incumbent_dep_gr_1yr", 
+  "incumbent_dep_gr_1yr_cd", 
+  "incumbent_dep_gr_1yr_cd_lag",
+  "incumbent_dep_gr_3yr", 
+  "incumbent_dep_gr_3yr_cd", 
+  "incumbent_dep_gr_3yr_cd_lag",
+  "incumbent_dep_gr_3yr_lag",
+  "incumbent_dep_gr_1yr_cd_small",
+  "incumbent_dep_gr_3yr_cd_small"
+)
+
+# 2. Apply Winsorization to all variables in the vector by YEAR
+dt[, (winsor_vars) := lapply(.SD, function(x) {
+  Winsorize(x, val = quantile(x, probs = c(0.01, 0.99), na.rm = TRUE))
+}), by = YEAR, .SDcols = winsor_vars]
+
+
+county_cbsa <- fread("C:/data/cbsa2fipsxw_2020.csv")
+county_cbsa[,county:=paste0(str_pad(fipsstatecode,2,"left","0"),str_pad(fipscountycode,3,"left","0"))]
+county_cbsa <- county_cbsa[,.(county,cbsacode)]
+
+# dt <- merge(dt,zip_county,by.x="ZIPBR",by.y="ZIP")
+dt <- merge(dt,county_cbsa,by="county",all.x=T)
+
+
+dt[,cbsa_yr:=paste(cbsacode,YEAR)]
+
+
+dt[,gr_3y:= incumbent_dep_gr_3yr]
+dt[,gr_3y_cd:= incumbent_dep_gr_3yr_cd]
+dt[,gr_3y_cd_lag:= incumbent_dep_gr_3yr_cd_lag]
+
+
+dt[,gr_1y:= incumbent_dep_gr_1yr]
+dt[,gr_1y_cd:= incumbent_dep_gr_1yr_cd]
+dt[,gr_1y_cd_lag:= incumbent_dep_gr_1yr_cd_lag]
+
+dt[,gr_1y_cd_sm:= incumbent_dep_gr_1yr_cd_small]
+dt[,gr_3y_cd_sm:= incumbent_dep_gr_3yr_cd_small]
+```
+
+```{r}
+# library(readxl)
+# library(stringr)
+# library(dplyr)
+# 
+# acs_data <- readRDS("C:/data/acs_data_2010_2024_county.rds")
+# acs_data[,county_name:=NULL]
+# 
+# irs_data <- readRDS("C:/data/irs_data_2010_2022_zip.rds")
+# irs_data <- irs_data[,c("zipcode","yr","dividend_frac","capital_gain_frac")]
+# irs_data[,zipcode:=str_pad(zipcode,5,"left","0")]
+# 
+# 
+# 
+# hud_crosswalk <- read_excel("C:/data/ZIP_COUNTY_032020.xlsx")
+# 
+# # 2. Clean the Crosswalk
+# # HUD files usually have 'ZIP' as numeric and 'COUNTY' as the FIPS code
+# hud_clean <- hud_crosswalk %>%
+#   mutate(
+#     zipcode = str_pad(ZIP, width = 5, side = "left", pad = "0"),
+#     county_fips = COUNTY,  # Rename for clarity
+#     weight = TOT_RATIO     # We will use Total Ratio to weight the split
+#   ) %>%
+#   select(zipcode, county_fips, weight)
+# 
+# 
+# 
+# # 4. Join and Aggregate
+# irs_data <- irs_data %>%
+#   # Join with crosswalk (this will duplicate rows for ZIPs that cross county lines)
+#   inner_join(hud_clean, by = "zipcode") %>%
+#   
+#   # Group by County and Year
+#   group_by(county_fips, yr) %>%
+#   
+#   # Calculate Weighted Means
+#   # We weight by 'TOT_RATIO' so that a ZIP which is 99% in this county 
+#   # counts more than a ZIP that is only 1% in this county.
+#   summarise(
+#     dividend_frac = weighted.mean(dividend_frac, w = weight, na.rm = TRUE),
+#     capital_gain_frac = weighted.mean(capital_gain_frac, w = weight, na.rm = TRUE),
+#     
+#     # Optional: Count how many unique ZIPs contributed to this county
+#     num_zips = n_distinct(zipcode) 
+#   ) %>%
+#   ungroup()
+# 
+# 
+# 
+# #
+# county_demo_data <- merge(acs_data,irs_data,by.x=c("county_fips","yr"),by.y=c("county_fips","yr"),all.x=T)
+# 
+# 
+# key_chars <- c("median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac")
+# 
+# county_demo_data <- data.table(county_demo_data)
+# county_demo_data[,paste0(key_chars,"_q"):=lapply(.SD, function(x) ntile(x,2)),by=yr,.SDcols = key_chars]
+# 
+# county_demo_data[,sophisticated:=ifelse(!is.na(dividend_frac)  & pct_college_educated_q==2 & (dividend_frac_q==2 | capital_gain_frac_q==2),1,
+#                                            ifelse(!is.na(dividend_frac),0,NA))]
+# 
+# 
+# county_demo_data <- county_demo_data[,c("county_fips","yr","median_income","median_age","pct_college_educated","capital_gain_frac","dividend_frac","sophisticated")]
+# 
+# county_demo_data[,age_bin:=ntile(median_age,2),by=yr]
+# county_demo_data[,above_median_age:=ifelse(age_bin==2,1,0)]
+# county_demo_data[,income_bin:=ntile(median_income,2),by=yr]
+# county_demo_data[,above_median_income:=ifelse(income_bin==2,1,0)]
+# 
+# temp1 <- county_demo_data[yr==2010]
+# for(y in c(2000:2009,2011:2012)) {
+#   temp <- copy(temp1)
+#   temp[,yr:=y]
+#   county_demo_data <- rbind(county_demo_data,temp)
+# }
+# 
+# temp1 <- county_demo_data[yr==2013]
+# for(y in 2014:2015) {
+#   temp <- copy(temp1)
+#   temp[,yr:=y]
+#   county_demo_data <- rbind(county_demo_data,temp)
+# }
+# 
+# 
+# 
+# temp1 <- county_demo_data[yr==2016]
+# for(y in 2017:2018) {
+#   temp <- copy(temp1)
+#   temp[,yr:=y]
+#   county_demo_data <- rbind(county_demo_data,temp)
+# }
+# 
+# 
+# temp1 <- county_demo_data[yr==2019]
+# for(y in 2020:2021) {
+#   temp <- copy(temp1)
+#   temp[,yr:=y]
+#   county_demo_data <- rbind(county_demo_data,temp)
+# }
+# 
+# temp1 <- county_demo_data[yr==2022]
+# for(y in 2023:2025) {
+#   temp <- copy(temp1)
+#   temp[,yr:=y]
+#   county_demo_data <- rbind(county_demo_data,temp)
+# }
+# 
+# saveRDS(county_demo_data,"C:/data/county_demo_data.rds")
+
+county_demo_data <- readRDS("C:/data/county_demo_data.rds")
+
+dt <- merge(dt,
+            county_demo_data[!is.na(county_fips),.(county_fips,yr,sophisticated,age_bin,median_age,median_income,
+                                        pct_college_educated,capital_gain_frac,dividend_frac,above_median_age,above_median_income)],
+            by.x=c("county","YEAR"),
+            by.y=c("county_fips","yr"),
+            all.x=T)
+
+dt <- dt[!is.na(sophisticated)]
+dt[, sophisticated := as.integer(sophisticated == 1L)]
+dt[, factor_age_bin := factor(age_bin)]
+dt[, log_income := log1p(median_income)]
+
+dt[,state_yr:=paste(substr(county,1,2),YEAR)]
+
+```
+
+
+
+```{r}
+sod_data <- readRDS("C:/data/fdic_sod_2000_2025_simple.rds")
+sod_data[,county:=str_pad(STCNTYBR,5,"left","0")]
+
+county_panel <- sod_data[, .(
+  total_deps = sum(DEPSUMBR, na.rm = TRUE)
+), by = .(county, YEAR)]
+
+# 3. BALANCE THE PANEL (CRITICAL STEP)
+# If a Zip had branches in 2000 and 2004 but none in 2001-2003, 
+# simple shifting will fail. We must create a row for every year.
+all_zips  <- unique(county_panel$county)
+min_yr    <- min(county_panel$YEAR)
+max_yr    <- max(county_panel$YEAR)
+full_grid <- CJ(county = all_zips, YEAR = min_yr:max_yr)
+
+# Merge actual data onto the full grid
+county_panel_balanced <- merge(full_grid, county_panel, by = c("county", "YEAR"), all.x = TRUE)
+
+# Fill NAs with 0 (No record = 0 deposits)
+county_panel_balanced[is.na(total_deps), total_deps := 0]
+
+# 4. CALCULATE LAGS AND GROWTH
+setorder(county_panel_balanced, county, YEAR)
+
+county_panel_balanced[, `:=`(
+  # Lag t-1
+  deps_lag1 = shift(total_deps, 1L, type = "lag"),
+  
+  # Lag t-4
+  deps_lag4 = shift(total_deps, 4L, type = "lag")
+), by = county]
+
+# Calculate the Growth Rate
+county_panel_balanced[, `:=`(
+  county_dep_growth_t4_t1 = fifelse(deps_lag4 > 0, 
+                                 (deps_lag1 - deps_lag4) / deps_lag4, 
+                                 NA_real_)
+)]
+
+# 5. CLEANUP
+# Remove rows where calculation wasn't possible (e.g., the first 4 years of data)
+final_growth_data <- county_panel_balanced[!is.na(county_dep_growth_t4_t1), 
+                                        .(county, YEAR, total_deps,deps_lag1, deps_lag4, county_dep_growth_t4_t1)]
+
+dt <- merge(dt,county_panel_balanced,by=c("county","YEAR"),all.x=T)
+
+dt[,county_dep_growth_t4_t1:=Winsorize(county_dep_growth_t4_t1, val = quantile(county_dep_growth_t4_t1, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+
+```
+
+```{r}
+setFixest_fml(
+  ..fixef_y_z_cbsayr     = ~ county + cbsa_yr,
+  ..fixef_y_z_stateyr     = ~ county + state_yr,
+  ..interactions = ~share_deps_closed*sophisticated + share_deps_closed*above_median_age + share_deps_closed*above_median_income,
+  ..vcov      = ~ county,
+  ..controls = ~ + log1p(branches_county_lag1)+county_dep_growth_t4_t1 + closer_remaining_mkt_share_lag1    +log1p(deps_lag1) #+incumbent_mkt_share_lag1+zip_dep_growth_t4_t1+log1p(deps_lag1)+closer_remaining_mkt_share_lag1,+zip_dep_growth_t4_t1
+)
+
+
+setFixest_etable(
+  se.below    = TRUE
+)
+```
+
+
+
+
+```{r}
+vars <- c("gr_3y",
+           "gr_3y_cd",
+          "gr_1y_cd",
+          "gr_3y_cd_sm",
+           "share_deps_closed",
+           "incumbent_mkt_share_lag1",
+           "closer_remaining_mkt_share_lag1",
+           "sophisticated",
+           "branches_county_lag1",
+          "county_dep_growth_t4_t1")
+
+
+temp <- summary_stats_function(dt[YEAR==2019],
+                               vars)
+
+md_table(temp)
+```
+
+## Summary Stats - 2019; share_deps_closed>0
+```{r}
+temp <- summary_stats_function(dt[YEAR==2019 & share_deps_closed>0],vars)
+
+md_table(temp)
+```
+
+# Baseline regression
+
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y~share_deps_closed+..controls | ..fixef_y_z_stateyr,data=dt)
+r[[2]] <- feols(gr_3y_cd~share_deps_closed+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[3]] <- feols(gr_3y_cd_lag~share_deps_closed+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[4]] <- feols(gr_1y_cd~share_deps_closed+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[5]] <- feols(gr_1y_cd_lag~share_deps_closed+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[6]] <- feols(gr_3y_cd_sm~share_deps_closed+..controls  | ..fixef_y_z_stateyr,data=dt[!is.na(gr_3y_cd)])
+r[[7]] <- feols(gr_1y_cd_sm~share_deps_closed+..controls  | ..fixef_y_z_stateyr,data=dt)
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y~..interactions+..controls | ..fixef_y_z_stateyr,data=dt)
+r[[2]] <- feols(gr_3y_cd~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[3]] <- feols(gr_3y_cd_lag~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[4]] <- feols(gr_1y_cd~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[5]] <- feols(gr_1y_cd_lag~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[6]] <- feols(gr_1y_cd_sm~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[!is.na(gr_1y_cd)])
+r[[7]] <- feols(gr_3y_cd_sm~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[!is.na(gr_3y_cd)])
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y_cd~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR<=2011])
+r[[2]] <- feols(gr_3y_cd~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR>=2012])
+r[[3]] <- feols(gr_1y_cd~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR<=2011])
+r[[4]] <- feols(gr_1y_cd~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR>=2012])
+r[[5]] <- feols(gr_3y_cd_sm~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR<=2011 &!is.na(gr_3y_cd)])
+r[[6]] <- feols(gr_3y_cd_sm~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR>=2012 &!is.na(gr_3y_cd)])
+r[[7]] <- feols(gr_1y_cd_sm~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR<=2011&!is.na(gr_1y_cd)])
+r[[8]] <- feols(gr_1y_cd_sm~..interactions+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR>=2012&!is.na(gr_1y_cd)])
+
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+
+## Summary Stats - 2019
+| Variable | Definition |
+| :--- | :--- |
+| **`gr_3y`** | Percentage growth of incumbent deposits from year $t$ to $t+3$ ($[Inc_{t+3} - Inc_{t}] / Inc_{t}$). |
+| **`gr_3y_cd`** | Three-year change in incumbent deposits (from $t$ to $t+3$) normalized by the pre-shock total market size ($t-1$). |
+| **`gr_3y_cln_cd`** | Same as `gr_3y_cd`, but calculated exclusively for "clean" incumbents (those that do not close branches in the subsequent three years). |
+| **`gr_1y_cd`** | One-year change in incumbent deposits (from $t$ to $t+1$) normalized by the pre-shock total market size ($t-1$). |
+| **`gr_3y_lag`** | Percentage growth of incumbent deposits from year $t-1$ to $t+3$ ($[Inc_{t+3} - Inc_{t_1}] / Inc_{t-1}$). |
+| **`gr_3y_cd_lag`** | Three-year change in incumbent deposits (from $t-1$ to $t+3$) normalized by the pre-shock total market size ($t-1$). |
+| **`gr_3y_cln_cd`** | Same as `gr_3y_cd`, but calculated exclusively for "clean" incumbents (those that do not close branches in the subsequent three years). |
+| **`gr_1y_cd_lag`** | One-year change in incumbent deposits (from $t-1$ to $t+1$) normalized by the pre-shock total market size ($t-1$). |
+| **`share_deps_closed`** | Deposits in branches closed in year $t$ (measured at $t-1$) as a share of the total market deposits at $t-1$. |
+| **`share_deps_closed_app`** | Share of the market closed by banks that have a mobile app. |
+| **`share_deps_closed_no_app`** | Share of the market closed by banks that do *not* have a mobile app. |
+| **`share_deps_closed_high_up`** | Share of the market closed by banks with high mobile app update frequency (above the median). |
+| **`share_deps_closed_low_up`** | Share of the market closed by banks with low mobile app update frequency or no app. |
+| **`incumbent_mkt_share_lag1`** | Aggregate market share held by incumbent banks at $t-1$. |
+| **`closer_remaining_mkt_share_lag1`** | Market share of branches retained by the closing bank within the same Zip code at $t-1$ (proxy for cannibalization). |
+| **`sophisticated`** | Binary indicator for Zip codes with high education and investment participation. |
+| **`branches_zip_lag1`** | Total number of bank branches in the Zip code at $t-1$. |
+| **`zip_dep_growth_t4_t1`** | Growth rate of total deposits in the Zip code from $t-4$ to $t-1$  |
+| **`w_drop_visits`** | The magnitude of the weighted average decline in physical branch visits (2019–2021) for the closing banks. Calculated as the negative of the deposit-weighted visit growth rate. Higer -> higer drop |
+
+
+
+
+
+```{r}
+r <- list()
+r[[1]] <- feols(gr_3y_lag~share_deps_closed+..controls | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[2]] <- feols(gr_3y_lag~share_deps_closed+..controls  | ..fixef_y_z_cntyyr,data=dt[incumbent_mkt_share_lag1>0.25],vcov=~ZIPBR)
+r[[3]] <- feols(gr_3y_cd_lag~share_deps_closed+..controls  | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[4]] <- feols(gr_3y_cd_lag~share_deps_closed+..controls| ..fixef_y_z_cntyyr,data=dt[incumbent_mkt_share_lag1>0.25],vcov=~ZIPBR)
+r[[5]] <- feols(gr_1y_cd_lag~share_deps_closed+..controls  | ..fixef_y_z_cbsayr,data=dt,vcov=~ZIPBR)
+r[[6]] <- feols(gr_1y_cd_lag~share_deps_closed+..controls  | ..fixef_y_z_cntyyr,data=dt[incumbent_mkt_share_lag1>0.25],vcov=~ZIPBR)
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+# Demographic/Usage interaction
+
+Model 1: Baseline capture rate estimation for the pre-app era (2000–2010).
+
+Model 2: Baseline capture rate estimation for the modern digital era (2011–2022).
+
+Model 3: Interacts the closure shock with the decline in physical branch visits to test if the capture rate varies by the branch's pre-closure foot traffic relevance (2019–2022).
+
+```{r}
+r <- list()
+r[[1]] <- feols(gr_3y_cd~share_deps_closed*sophisticated+share_deps_closed*above_median_age+share_deps_closed*above_median_income+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR<=2011],vcov=~ZIPBR)
+r[[2]] <- feols(gr_3y_cd~share_deps_closed*sophisticated+share_deps_closed*above_median_age+share_deps_closed*above_median_income+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>=2012],vcov=~ZIPBR)
+r[[3]] <- feols(gr_3y_cd~share_deps_closed*w_drop_visits+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>=2018],vcov=~ZIPBR)
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+```{r}
+r <- list()
+r[[1]] <- feols(gr_3y_cd_lag~share_deps_closed*sophisticated+share_deps_closed*above_median_age+share_deps_closed*above_median_income+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR<=2011],vcov=~ZIPBR)
+r[[2]] <- feols(gr_3y_cd_lag~share_deps_closed*sophisticated+share_deps_closed*above_median_age+share_deps_closed*above_median_income+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>=2012],vcov=~ZIPBR)
+r[[3]] <- feols(gr_3y_cd_lag~share_deps_closed*w_drop_visits+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>=2018],vcov=~ZIPBR)
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+# App/no app and above and below median updates
+Model 1: Decomposes the closure shock by the closing bank's App Availability (App vs. No App) during the early period ($\le$ 2011).
+
+Model 2: Decomposes the closure shock by the closing bank's App Availability (App vs. No App) during the modern period (> 2011).
+
+Model 3: Decomposes the closure shock by the closing bank's App Update Intensity (High vs. Low Updates) during the early period ($\le$ 2011).
+
+Model 4: Decomposes the closure shock by the closing bank's App Update Intensity (High vs. Low Updates) during the modern period (> 2011).
+
+
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y_cd~share_deps_closed_app+share_deps_closed_no_app+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR<=2011],vcov=~ZIPBR)
+r[[2]] <- feols(gr_3y_cd~share_deps_closed_app+share_deps_closed_no_app+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>2011],vcov=~ZIPBR)
+
+r[[3]] <- feols(gr_3y_cd~share_deps_closed_high_up+share_deps_closed_low_up+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR<=2011],vcov=~ZIPBR)
+r[[4]] <- feols(gr_3y_cd~share_deps_closed_high_up+share_deps_closed_low_up+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>2011],vcov=~ZIPBR)
+
+r[[5]] <- feols(gr_3y_cd~share_deps_closed_high_drop+share_deps_closed_low_up+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR<=2011],vcov=~ZIPBR)
+r[[6]] <- feols(gr_3y_cd~share_deps_closed_high_drop+share_deps_closed_low_drop+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>2018],vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+
+
+
+# App/no app and above and below median updates with demographic interactions
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y_cd~share_deps_closed_app*sophisticated+share_deps_closed_no_app*sophisticated+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR<=2011],vcov=~ZIPBR)
+r[[2]] <- feols(gr_3y_cd~share_deps_closed_app*sophisticated+share_deps_closed_no_app*sophisticated+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>2011],vcov=~ZIPBR)
+
+r[[3]] <- feols(gr_3y_cd~share_deps_closed_high_up*sophisticated+share_deps_closed_low_up*sophisticated+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR<=2011],vcov=~ZIPBR)
+r[[4]] <- feols(gr_3y_cd~share_deps_closed_high_up*sophisticated+share_deps_closed_low_up*sophisticated+..controls  | ..fixef_y_z_cbsayr,data=dtdt[YEAR>2011],vcov=~ZIPBR)
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```

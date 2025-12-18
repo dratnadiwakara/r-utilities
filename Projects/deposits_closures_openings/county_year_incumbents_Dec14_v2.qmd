@@ -1,0 +1,261 @@
+---
+title: "County-YEAR - 12/18/2025"
+format:
+  html:
+    page-layout: full
+    # optional: keep text from getting too wide
+    # css: styles.css
+    code-overflow: scroll
+    code-fold: true
+    number-sections: true
+    self-contained: true
+editor: source
+execute: 
+  warning: false
+  echo: true
+---
+
+```{r}
+rm(list=ls())
+library(data.table)
+library(fixest)
+library(DescTools)
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(readxl)
+library(stringr)
+library(marginaleffects)
+
+source('https://raw.githubusercontent.com/dratnadiwakara/r-utilities/refs/heads/main/summary_stat_tables.R')
+```
+
+```{r}
+dt <- readRDS("C:/data/county_coexistence_panel_Dec14_v4.rds")
+setDT(dt)
+
+
+dt <- dt[branches_county_lag1>=3 ]
+
+# 1. Define the vector of variables to Winsorize
+winsor_vars <- grep("^incumbent_dep_gr_", names(dt), value = TRUE)
+
+# 2. Apply Winsorization to all identified variables by YEAR
+dt[, (winsor_vars) := lapply(.SD, function(x) {
+  # Check if there are enough non-NA values to calculate quantiles
+  if (sum(!is.na(x)) > 0) {
+    Winsorize(x, val = quantile(x, probs = c(0.01, 0.99), na.rm = TRUE))
+  } else {
+    x # Return original (likely all NAs) if calculation fails
+  }
+}), by = YEAR, .SDcols = winsor_vars]
+
+
+dt[,gr_3y:= incumbent_dep_gr_3yr_lg]
+dt[,gr_3y_cd:= incumbent_dep_gr_3yr_cd_lg]
+dt[,gr_3y_cd_lag:= incumbent_dep_gr_3yr_cd_lag_lg]
+
+
+dt[,gr_1y:= incumbent_dep_gr_1yr_lg]
+dt[,gr_1y_cd:= incumbent_dep_gr_1yr_cd_lg]
+dt[,gr_1y_cd_lag:= incumbent_dep_gr_1yr_cd_lag_lg]
+
+dt[,gr_1y_cd_sm:= incumbent_dep_gr_1yr_cd_sm]
+dt[,gr_3y_cd_sm:= incumbent_dep_gr_3yr_cd_sm]
+
+dt[,gr_1y_cd_all:= incumbent_dep_gr_1yr_cd_all]
+dt[,gr_3y_cd_all:= incumbent_dep_gr_3yr_cd_all]
+dt[,gr_3y_cd_lag_all := incumbent_dep_gr_3yr_cd_lag_all]
+```
+
+```{r}
+county_demo_data <- readRDS("C:/data/county_demo_data.rds")
+
+dt <- merge(dt,
+            county_demo_data[!is.na(county_fips),.(county_fips,yr,sophisticated,age_bin,median_age,median_income,
+                                        pct_college_educated,capital_gain_frac,dividend_frac,above_median_age,above_median_income)],
+            by.x=c("county","YEAR"),
+            by.y=c("county_fips","yr"),
+            all.x=T)
+
+dt <- dt[!is.na(sophisticated)]
+dt[, sophisticated := as.integer(sophisticated == 1L)]
+dt[, factor_age_bin := factor(age_bin)]
+dt[, log_income := log1p(median_income)]
+
+dt[,state_yr:=paste(substr(county,1,2),YEAR)]
+
+```
+
+```{r}
+sod_data <- readRDS("C:/data/fdic_sod_2000_2025_simple.rds")
+sod_data[,county:=str_pad(STCNTYBR,5,"left","0")]
+
+county_panel <- sod_data[, .(
+  total_deps = sum(DEPSUMBR, na.rm = TRUE)
+), by = .(county, YEAR)]
+
+# 3. BALANCE THE PANEL (CRITICAL STEP)
+# If a Zip had branches in 2000 and 2004 but none in 2001-2003, 
+# simple shifting will fail. We must create a row for every year.
+all_zips  <- unique(county_panel$county)
+min_yr    <- min(county_panel$YEAR)
+max_yr    <- max(county_panel$YEAR)
+full_grid <- CJ(county = all_zips, YEAR = min_yr:max_yr)
+
+# Merge actual data onto the full grid
+county_panel_balanced <- merge(full_grid, county_panel, by = c("county", "YEAR"), all.x = TRUE)
+
+# Fill NAs with 0 (No record = 0 deposits)
+county_panel_balanced[is.na(total_deps), total_deps := 0]
+
+# 4. CALCULATE LAGS AND GROWTH
+setorder(county_panel_balanced, county, YEAR)
+
+county_panel_balanced[, `:=`(
+  # Lag t-1
+  deps_lag1 = shift(total_deps, 1L, type = "lag"),
+  
+  # Lag t-4
+  deps_lag4 = shift(total_deps, 4L, type = "lag")
+), by = county]
+
+# Calculate the Growth Rate
+county_panel_balanced[, `:=`(
+  county_dep_growth_t4_t1 = fifelse(deps_lag4 > 0, 
+                                 (deps_lag1 - deps_lag4) / deps_lag4, 
+                                 NA_real_)
+)]
+
+# 5. CLEANUP
+# Remove rows where calculation wasn't possible (e.g., the first 4 years of data)
+final_growth_data <- county_panel_balanced[!is.na(county_dep_growth_t4_t1), 
+                                        .(county, YEAR, total_deps,deps_lag1, deps_lag4, county_dep_growth_t4_t1)]
+
+dt <- merge(dt,county_panel_balanced,by=c("county","YEAR"),all.x=T)
+
+dt[,county_dep_growth_t4_t1:=Winsorize(county_dep_growth_t4_t1, val = quantile(county_dep_growth_t4_t1, probs = c(0.01, 0.99), na.rm = T)),by=YEAR]
+
+
+```
+
+```{r}
+setFixest_fml(
+  ..fixef_y_z_cbsayr     = ~ county + cbsa_yr,
+  ..fixef_y_z_stateyr     = ~ county + state_yr,
+  ..interactions_lg = ~share_deps_closed_lg*sophisticated + share_deps_closed_lg*above_median_age + share_deps_closed_lg*above_median_income,
+  ..interactions_all = ~share_deps_closed_all*sophisticated + share_deps_closed_all*above_median_age + share_deps_closed_all*above_median_income,
+  ..vcov      = ~ county,
+  ..controls = ~ + log1p(branches_county_lag1)+county_dep_growth_t4_t1 + incumbent_mkt_share_lag1    +log1p(deps_lag1) #+incumbent_mkt_share_lag1+zip_dep_growth_t4_t1+log1p(deps_lag1)+closer_remaining_mkt_share_lag1,+zip_dep_growth_t4_t1
+)
+
+
+setFixest_etable(
+  se.below    = TRUE
+)
+```
+
+```{r}
+vars <- c("gr_3y",
+           "gr_3y_cd",
+          "gr_1y_cd",
+          "gr_3y_cd_sm",
+           "share_deps_closed_lg",
+          "share_deps_closed_all",
+           "incumbent_mkt_share_lag1",
+           "closer_remaining_mkt_share_lag1",
+           "sophisticated",
+           "branches_county_lag1",
+          "county_dep_growth_t4_t1")
+
+
+temp <- summary_stats_function(dt[YEAR==2019],
+                               vars)
+
+md_table(temp)
+```
+
+## Summary Stats - 2019; share_deps_closed\>0
+
+```{r}
+temp <- summary_stats_function(dt[YEAR==2019 & share_deps_closed_lg>0],vars)
+
+md_table(temp)
+```
+
+# All banks
+
+This is similar to previous tests.
+
+column 4: interactions using full sample
+
+column 5: period \<= 2011
+
+column 6: period \>= 2012
+
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y_cd_all~share_deps_closed_all+..controls | ..fixef_y_z_stateyr,data=dt)
+r[[2]] <- feols(gr_3y_cd_lag_all~share_deps_closed_all+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[3]] <- feols(gr_1y_cd_all~share_deps_closed_all+..controls  | ..fixef_y_z_stateyr,data=dt)
+
+r[[4]] <- feols(gr_3y_cd_all~..interactions_all+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[5]] <- feols(gr_3y_cd_all~..interactions_all+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR<=2011])
+r[[6]] <- feols(gr_3y_cd_all~..interactions_all+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR>=2012])
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+# Large banks
+
+In these tests, only large banks (\>10bn) are used to calculate share of deps closed (more than 75% of the branch closures are coming from these banks).
+
+LHS variables are also only for large banks, idea is that these are the comparable substitutes for deposits in closed banks.
+
+column 4: interactions using full sample
+
+column 5: period \<= 2011
+
+column 6: period \>= 2012
+
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y_cd~share_deps_closed_lg+..controls | ..fixef_y_z_stateyr,data=dt)
+r[[2]] <- feols(gr_3y_cd_lag~share_deps_closed_lg+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[3]] <- feols(gr_1y_cd~share_deps_closed_lg+..controls  | ..fixef_y_z_stateyr,data=dt)
+
+r[[4]] <- feols(gr_3y_cd~..interactions_lg+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[5]] <- feols(gr_3y_cd~..interactions_lg+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR<=2011])
+r[[6]] <- feols(gr_3y_cd~..interactions_lg+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR>=2012])
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
+
+# Small banks
+
+This is same as the above. share of deps closed is calculated using large banks, but the LHS looks at growth at small banks.
+
+column 3: interactions using full sample
+
+column 4: period \<= 2011
+
+column 5: period \>= 2012
+
+```{r}
+r <- list()
+
+r[[1]] <- feols(gr_3y_cd_sm~share_deps_closed_lg+..controls | ..fixef_y_z_stateyr,data=dt)
+r[[2]] <- feols(gr_1y_cd_sm~share_deps_closed_lg+..controls  | ..fixef_y_z_stateyr,data=dt)
+
+
+r[[3]] <- feols(gr_1y_cd_sm~..interactions_lg+..controls  | ..fixef_y_z_stateyr,data=dt)
+r[[4]] <- feols(gr_1y_cd_sm~..interactions_lg+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR<=2011])
+r[[5]] <- feols(gr_1y_cd_sm~..interactions_lg+..controls  | ..fixef_y_z_stateyr,data=dt[YEAR>=2012])
+
+md_table(etable(r,signif.code =  c("***"=0.01, "**"=0.05, "*"=0.10)))
+
+```
